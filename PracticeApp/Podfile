@@ -1,0 +1,8 @@
+target 'PracticeApp' do
+platform :ios, '11.0'
+pod 'Firebase'
+pod 'Firebase/Core'
+pod 'Firebase/Auth'
+pod 'Firebase/Database'
+
+end
