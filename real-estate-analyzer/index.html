@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>실거주 매수 판단기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<!--BODY-START-->
+<div class="app">
+  <header class="masthead">
+    <div>
+      <p class="eyebrow">한국 아파트 · 실거주 1주택 기준 · 규정 기준일 <span id="asOf">2026-09-25</span></p>
+      <h1>실거주 매수 판단기</h1>
+    </div>
+    <p class="lede">대출 한도(LTV·DSR·스트레스 금리), 취득·보유·양도 세금, 전세·월세와의 순자산 비교, 금리·집값 충격까지 한 번에 계산합니다. 입력값은 예시이며 바꾸는 즉시 다시 계산됩니다.</p>
+  </header>
+
+  <div class="layout">
+    <form id="inputs" class="panel" autocomplete="off">
+      <fieldset>
+        <legend>목적·시기</legend>
+        <label class="f wide">매수 목적
+          <select id="purpose">
+            <option value="거주" selected>거주 (내가 들어가 산다)</option>
+            <option value="거주+투자">거주+투자 (살면서 시세차익도 본다)</option>
+            <option value="투자">투자 (세를 놓는다)</option>
+          </select>
+        </label>
+        <label class="f">매수 예정 시점<input id="purchaseDate" type="month" value="2026-11" data-required></label>
+        <label class="f">입주 희망 시점 <span class="unit">선택</span><input id="moveInBy" type="month"></label>
+        <div class="checks wide">
+          <label><input id="assumeTenant" type="checkbox"> 세입자 승계 (전세 낀 매수)</label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>매수할 집</legend>
+        <label class="f wide">지역
+          <select id="regionId"></select>
+          <span class="hint" id="regionHint"></span>
+        </label>
+        <label class="f">주택 유형
+          <select id="propertyType">
+            <option value="아파트" selected>아파트</option>
+            <option value="빌라">빌라 (다세대·연립)</option>
+            <option value="단독주택">단독·다가구</option>
+            <option value="오피스텔">오피스텔 (주거용)</option>
+          </select>
+        </label>
+        <label class="f">매매가 <span class="unit">만원</span><input id="price" type="number" step="100" value="100000" data-required></label>
+        <label class="f">전용면적 <span class="unit">㎡</span><input id="areaM2" type="number" step="0.1" value="84" data-required></label>
+        <label class="f">같은 단지 전세 시세 <span class="unit">만원</span><input id="jeonsePrice" type="number" step="100" value="60000" data-required></label>
+        <label class="f">공시가격 / 시세 <span class="unit">%</span><input id="publicRatio" type="number" step="1" value="69"></label>
+        <div class="f wide live-row">
+          <label class="f" style="flex:1">지번 주소 <span class="unit">필지 규제 최신 확인</span><input id="parcelAddress" type="text" placeholder="예: 서울 마포구 아현동 777"></label>
+          <button type="button" id="landUseFetch" class="ghost">토지이용계획 조회</button>
+          <span class="hint wide" id="landUseStatus"></span>
+        </div>
+        <label class="f wide">같은 평형 최근 실거래가 <span class="unit">만원, 쉼표로 구분 · 비우면 실거래가 탭 데이터 사용</span><input id="recentTrades" type="text" inputmode="numeric" value="98000, 101000, 99500" data-required></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>입지</legend>
+        <label class="f">역까지 도보 <span class="unit">분</span><input id="subwayWalkMin" type="number" step="1" value="7" data-required></label>
+        <label class="f">업무지구 통근 <span class="unit">분</span><input id="jobCommuteMin" type="number" step="1" value="35" data-required></label>
+        <label class="f">초등학교 도보 <span class="unit">분</span><input id="schoolWalkMin" type="number" step="1" value="6" data-required></label>
+        <label class="f wide">호재·편의 <span class="unit">쉼표로 구분</span><input id="amenities" type="text" value="한강공원, 대형마트"></label>
+        <label class="f wide">악재·혐오시설 <span class="unit">쉼표로 구분</span><input id="negatives" type="text" value=""></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>우리 가구</legend>
+        <label class="f wide">주택 보유 상태
+          <select id="buyerType">
+            <option value="first">생애최초 (평생 무주택)</option>
+            <option value="nohome" selected>무주택 (과거 보유 이력 있음)</option>
+            <option value="one_dispose">1주택 — 기존 집 처분 예정</option>
+            <option value="one">1주택 — 기존 집 유지</option>
+            <option value="multi">2주택 이상</option>
+          </select>
+        </label>
+        <label class="f">부부합산 연소득 <span class="unit">만원</span><input id="annualIncome" type="number" step="100" value="12000" data-required></label>
+        <label class="f">기존 대출 연 원리금 <span class="unit">만원</span><input id="existingDebt" type="number" step="10" value="0"></label>
+        <label class="f">보유 현금 <span class="unit">만원</span><input id="cash" type="number" step="100" value="65000" data-required></label>
+        <label class="f">연 순저축 <span class="unit">만원</span><input id="annualSavings" type="number" step="100" value="2400"></label>
+        <label class="f">월 생활비 <span class="unit">만원</span><input id="monthlyLiving" type="number" step="10" value="300"></label>
+        <label class="f">세대주 나이 <span class="unit">세</span><input id="age" type="number" step="1" value="40"></label>
+        <div class="checks wide">
+          <label><input id="newlywed" type="checkbox"> 신혼(7년 내)</label>
+          <label><input id="newborn" type="checkbox"> 2년 내 출산</label>
+          <label><input id="multichild" type="checkbox"> 다자녀</label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>주택담보대출</legend>
+        <label class="f">대출 금리 <span class="unit">%</span><input id="rate" type="number" step="0.05" value="4.2"></label>
+        <label class="f">만기 <span class="unit">년</span><input id="termYears" type="number" step="1" value="30"></label>
+        <label class="f">금리 유형
+          <select id="rateType">
+            <option value="variable">변동</option>
+            <option value="mixed" selected>혼합형 (5년 고정)</option>
+            <option value="periodic">주기형</option>
+            <option value="fixed">완전 고정</option>
+          </select>
+        </label>
+        <label class="f">상환 방식
+          <select id="method">
+            <option value="amortized" selected>원리금균등</option>
+            <option value="equalPrincipal">원금균등</option>
+          </select>
+        </label>
+        <label class="f">금융기관
+          <select id="lender">
+            <option value="bank" selected>은행 (DSR 40%)</option>
+            <option value="nonbank">2금융권 (DSR 50%)</option>
+          </select>
+        </label>
+        <label class="f">희망 대출액 <span class="unit">만원</span><input id="loanWanted" type="number" step="100" placeholder="비우면 최대"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>예산 밖 자금 (개인 차입·근저당)</legend>
+        <div class="checks wide">
+          <label><input id="usePrivate" type="checkbox"> 금융권 한도 밖 개인 자금을 더해 본다</label>
+        </div>
+        <div id="privateFields" class="subgrid wide" hidden>
+          <label class="f wide">방식
+            <select id="privateType">
+              <option value="seller">매도인 잔금 유예 + 근저당</option>
+              <option value="family">가족 등 특수관계인 차입 + 근저당</option>
+              <option value="other">지인·기타 개인 차입 + 근저당</option>
+            </select>
+          </label>
+          <label class="f">차입 원금 <span class="unit">만원</span><input id="privatePrincipal" type="number" step="100" value="30000"></label>
+          <label class="f">연 이자율 <span class="unit">%</span><input id="privateRate" type="number" step="0.1" value="4.6"></label>
+          <label class="f">만기 (일시상환) <span class="unit">년</span><input id="privateTerm" type="number" step="1" value="3"></label>
+          <label class="f">상환 재원
+            <select id="privateRepay">
+              <option value="">정하지 않음</option>
+              <option value="저축">연 저축</option>
+              <option value="기존주택 매도">기존 주택 매도 대금</option>
+              <option value="대환">금융권 대출로 대환</option>
+              <option value="매도">이 집을 팔아서</option>
+            </select>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>재건축·정비사업</legend>
+        <div class="checks wide">
+          <label><input id="reconTarget" type="checkbox"> 재건축 대상 단지 (이주비 활용 분석)</label>
+        </div>
+        <div id="reconFields" class="subgrid wide" hidden>
+          <div class="f wide live-row">
+            <label class="f" style="flex:1">정비사업 검색 <span class="unit">서울·경기 공공데이터</span><input id="redevQuery" type="text" placeholder="구역명·단지명 (예: 임광3차)"></label>
+            <button type="button" id="redevFetch" class="ghost">최신 단계 불러오기</button>
+            <select id="redevPick" class="wide" hidden data-nosave></select>
+            <span class="hint wide" id="redevStatus"></span>
+          </div>
+          <label class="f">정비사업 단계
+            <select id="reconStage" data-required>
+              <option value="">선택</option>
+              <option value="기본계획수립">1 기본계획수립</option><option value="재건축진단">2 안전진단</option><option value="정비구역지정">3 정비구역지정</option>
+              <option value="추진위원회승인">4 추진위원회승인</option><option value="조합설립인가">5 조합설립인가</option><option value="사업시행인가">6 사업시행인가</option>
+              <option value="관리처분인가">7 관리처분인가</option><option value="이주철거">8 이주·철거신고</option><option value="착공">9 착공신고</option>
+              <option value="일반분양승인">10 일반분양승인</option><option value="준공">11 준공인가</option>
+            </select>
+          </label>
+          <label class="f">현재 단계 진입일 <span class="unit">선택</span><input id="stageDate" type="date"></label>
+          <label class="f">종전자산 감정가 <span class="unit">만원</span><input id="priorAssetValue" type="number" step="100" placeholder="비우면 매매가 80%" data-required></label>
+          <label class="f">예상 분담금 <span class="unit">만원, 환급은 −</span><input id="expectedContribution" type="number" step="100" data-required></label>
+          <label class="f">신축 예상 시세 <span class="unit">만원</span><input id="newUnitValue" type="number" step="100"></label>
+          <label class="f">이주비 LTV <span class="unit">%</span><input id="relocationLtv" type="number" step="5" value="50"></label>
+          <label class="f">임시거주 보증금 <span class="unit">만원</span><input id="tempHousingDeposit" type="number" step="100" placeholder="비우면 전세 시세"></label>
+          <label class="f">매도인 보유기간 <span class="unit">년</span><input id="ownerHeldYears" type="number" step="1"></label>
+          <label class="f">매도인 거주기간 <span class="unit">년</span><input id="ownerLivedYears" type="number" step="1"></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>매수하지 않으면 (임차 대안)</legend>
+        <label class="f">보증금 <span class="unit">만원</span><input id="rentDeposit" type="number" step="100" value="60000"></label>
+        <label class="f">월세 <span class="unit">만원</span><input id="rentMonthly" type="number" step="5" value="0"></label>
+        <label class="f">전세대출 <span class="unit">만원</span><input id="rentLoan" type="number" step="100" value="0"></label>
+        <label class="f">전세대출 금리 <span class="unit">%</span><input id="rentLoanRate" type="number" step="0.05" value="3.9"></label>
+        <div class="checks wide">
+          <label><input id="useRenewalRight" type="checkbox" checked> 계약갱신청구권 사용 (2+2년, 갱신 시 5% 상한·이사 없음)</label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>미래 가정</legend>
+        <label class="f">보유 기간 <span class="unit">년</span><input id="years" type="number" step="1" min="1" max="30" value="10" data-required></label>
+        <label class="f">연 집값 상승률 <span class="unit">%</span><input id="appreciation" type="number" step="0.1" value="3"></label>
+        <label class="f">집값 변동성 <span class="unit">%</span><input id="appreciationVol" type="number" step="0.5" value="7"></label>
+        <label class="f">연 전월세 상승률 <span class="unit">%</span><input id="rentGrowth" type="number" step="0.1" value="3"></label>
+        <label class="f">여유자금 투자수익률 <span class="unit">%</span><input id="invReturn" type="number" step="0.1" value="3.5"></label>
+        <label class="f">투자수익 변동성 <span class="unit">%</span><input id="invVol" type="number" step="0.5" value="10"></label>
+        <label class="f">연 수선·유지비 <span class="unit">% of 집값</span><input id="maintenanceRate" type="number" step="0.05" value="0.2"></label>
+        <label class="f">이사비 (회당) <span class="unit">만원</span><input id="moveCost" type="number" step="10" value="300"></label>
+        <label class="f">채권 할인율 <span class="unit">%</span><input id="bondDiscount" type="number" step="0.5" value="8"></label>
+        <label class="f">기다리는 동안 금리 변화 <span class="unit">%p</span><input id="rateChange" type="number" step="0.25" value="0"></label>
+        <div class="checks wide">
+          <label><input id="vat" type="checkbox"> 중개보수 부가세 10% 포함</label>
+          <label><input id="reform2026" type="checkbox"> 2026 세제개편안 반영 (미확정)</label>
+        </div>
+      </fieldset>
+      <button type="button" id="reset" class="ghost">예시값으로 되돌리기</button>
+    </form>
+
+    <main class="results">
+      <section id="verdict" class="verdict" aria-live="polite"></section>
+      <section id="kpis" class="kpis"></section>
+
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="conditions" aria-selected="true">조건 점검</button>
+        <button role="tab" data-tab="loan">대출 한도</button>
+        <button role="tab" data-tab="cost">세금·부대비용</button>
+        <button role="tab" data-tab="compare">매수 vs 임차</button>
+        <button role="tab" data-tab="timing">매수 시점</button>
+        <button role="tab" data-tab="recon" id="reconTabBtn" hidden>재건축·이주비</button>
+        <button role="tab" data-tab="risk">리스크</button>
+        <button role="tab" data-tab="market">실거래가</button>
+        <button role="tab" data-tab="candidates">후보 비교</button>
+      </nav>
+
+      <section class="tab" id="tab-conditions"></section>
+      <section class="tab" id="tab-loan" hidden></section>
+      <section class="tab" id="tab-recon" hidden></section>
+      <section class="tab" id="tab-cost" hidden></section>
+      <section class="tab" id="tab-compare" hidden></section>
+      <section class="tab" id="tab-timing" hidden></section>
+      <section class="tab" id="tab-risk" hidden></section>
+      <section class="tab" id="tab-market" hidden>
+        <div class="card" id="apiCard">
+          <h3>국토부 실거래가 자동 조회</h3>
+          <p class="muted" id="apiStatus">로컬 서버(<code>npm start</code>)로 열면 공공데이터포털 API로 단지 거래를 직접 불러옵니다. 지금은 파일로 열려 있어 CSV 불러오기만 쓸 수 있습니다.</p>
+          <div class="api-grid" id="apiForm" hidden>
+            <label class="f">시군구 코드 <span class="unit">5자리</span><input id="apiLawd" type="text" inputmode="numeric" maxlength="5"></label>
+            <label class="f">단지명 포함 <span class="unit">비우면 전체</span><input id="apiName" type="text" placeholder="예: 래미안"></label>
+            <label class="f">기간
+              <select id="apiMonths"><option value="12">최근 12개월</option><option value="24" selected>최근 24개월</option><option value="36">최근 36개월</option></select>
+            </label>
+            <label class="f" id="apiKeyWrap">인증키 <span class="unit">일반 인증키(Decoding)</span><input id="apiKey" type="password" autocomplete="off"></label>
+            <button type="button" id="apiFetch" class="primary">실거래가 불러오기</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>CSV로 불러오기</h3>
+          <p class="muted">rt.molit.go.kr에서 내려받은 아파트 매매 CSV를 올리거나 내용을 붙여넣으세요. 해제된 거래는 빼고, 전용면적 ±3㎡ 거래로 ㎡당 가격 추세를 구해 입력한 매매가와 비교합니다.</p>
+          <div class="row">
+            <input id="csvFile" type="file" accept=".csv,text/csv">
+            <button type="button" id="csvSample" class="ghost">예시 데이터 불러오기</button>
+          </div>
+          <textarea id="csvText" rows="4" placeholder="CSV 내용을 여기에 붙여넣기"></textarea>
+        </div>
+        <div id="marketOut"></div>
+      </section>
+      <section class="tab" id="tab-candidates" hidden>
+        <div class="card">
+          <h3>후보 매물 비교</h3>
+          <p class="muted">지금 입력한 조건을 후보로 저장하고 최대 4개까지 나란히 비교합니다. 후보는 이 브라우저에만 저장됩니다.</p>
+          <div class="row">
+            <input id="candName" type="text" placeholder="후보 이름 (예: 마포 A단지 84)" maxlength="30" style="flex:1;min-width:0">
+            <button type="button" id="candSave" class="primary">현재 조건을 후보로 저장</button>
+          </div>
+        </div>
+        <div id="candOut"></div>
+      </section>
+
+      <footer class="notes" id="notes"></footer>
+    </main>
+  </div>
+</div>
+<div id="tooltip" class="tooltip" hidden></div>
+<!--BODY-END-->
+<script src="js/policy.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/conditions.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
