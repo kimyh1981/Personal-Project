@@ -14,6 +14,7 @@ const live = require('./live-data.js');
 const root = path.join(__dirname, '..');
 const PORT = Number(process.env.PORT) || 8080;
 const API = 'https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade';
+const RENT_API = 'https://apis.data.go.kr/1613000/RTMSDataSvcAptRent/getRTMSDataSvcAptRent';
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.csv': 'text/csv; charset=utf-8', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.svg': 'image/svg+xml' };
 
 function fetchText(url) {
@@ -48,7 +49,9 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/landuse') return liveRoute(res, () => live.landUse(cfg, url.searchParams.get('address'), fresh));
   if (url.pathname === '/api/redev') return liveRoute(res, () => live.redevSearch(cfg, url.searchParams.get('sido'), url.searchParams.get('q'), fresh));
   if (url.pathname === '/api/regulation') return liveRoute(res, () => live.regulationCheck(cfg, fresh));
-  if (url.pathname === '/api/rtms') {
+  if (url.pathname === '/api/geo') return liveRoute(res, () => live.geocode(cfg, url.searchParams.get('q'), fresh));
+  if (url.pathname === '/api/nearby') return liveRoute(res, () => live.nearby(cfg, Number(url.searchParams.get('lat')), Number(url.searchParams.get('lng')), fresh));
+  if (url.pathname === '/api/rtms' || url.pathname === '/api/rtms-rent') {
     const lawd = url.searchParams.get('lawd') || '';
     const ym = url.searchParams.get('ym') || '';
     const key = cfg.dataGoKrKey || url.searchParams.get('key') || '';
@@ -60,7 +63,8 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(401, { 'content-type': 'text/plain; charset=utf-8' });
       return res.end('공공데이터포털 인증키가 없습니다');
     }
-    const q = `${API}?serviceKey=${encodeURIComponent(key)}&LAWD_CD=${lawd}&DEAL_YMD=${ym}&numOfRows=1000&pageNo=1`;
+    const base = url.pathname === '/api/rtms-rent' ? RENT_API : API;
+    const q = `${base}?serviceKey=${encodeURIComponent(key)}&LAWD_CD=${lawd}&DEAL_YMD=${ym}&numOfRows=1000&pageNo=1`;
     try {
       const r = await fetchText(q);
       live.track('rtms', r.status < 400, r.status < 400 ? '' : 'HTTP ' + r.status);

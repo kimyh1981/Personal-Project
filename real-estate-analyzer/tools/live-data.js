@@ -27,7 +27,8 @@ function loadConfig() {
     ggKey: pick('ggKey', 'GG_OPEN_API_KEY', ''),
     // 경기데이터드림 '일반 정비 사업 추진 현황' Open API 서비스명
     ggRedevService: pick('ggRedevService', 'GG_REDEV_SERVICE', ''),
-    lawOc: pick('lawOc', 'LAW_OC', ''), // 법제처 국가법령정보 공동활용 OC(가입 이메일 ID)
+    lawOc: pick('lawOc', 'LAW_OC', ''),
+    kakaoKey: pick('kakaoKey', 'KAKAO_REST_KEY', ''), // 카카오 로컬 REST API 키 (좌표·주변 역·학교) // 법제처 국가법령정보 공동활용 OC(가입 이메일 ID)
     newsFeeds: [].concat(pick('newsFeeds', 'NEWS_FEEDS', null) || []).flatMap((x) => String(x).split(',')).map((x) => x.trim()).filter(Boolean),
     _defaultFeeds: [
       'https://www.molit.go.kr/USR/NEWS/m_71/rss.jsp',
@@ -40,10 +41,10 @@ function loadConfig() {
 }
 
 // ── HTTP ────────────────────────────────────────────────────────────────
-function defaultFetch(url) {
+function defaultFetch(url, headers) {
   const lib = url.startsWith('https:') ? https : http;
   return new Promise((resolve, reject) => {
-    const req = lib.get(url, { timeout: 15000, headers: { 'user-agent': 'real-estate-analyzer/1.0' } }, (res) => {
+    const req = lib.get(url, { timeout: 15000, headers: { 'user-agent': 'real-estate-analyzer/1.0', ...(headers || {}) } }, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf8') }));
@@ -59,8 +60,10 @@ async function getText(url) {
   if (r.status >= 400) throw new Error(`HTTP ${r.status}`);
   return r.body;
 }
-async function getJson(url) {
-  const body = await getText(url);
+async function getJson(url, headers) {
+  const r = await fetcher(url, headers);
+  if (r.status >= 400) throw new Error(`HTTP ${r.status}`);
+  const body = r.body;
   try { return JSON.parse(body); } catch (_) { throw new Error('JSON이 아닌 응답: ' + body.slice(0, 120)); }
 }
 
@@ -290,6 +293,52 @@ async function regulationCheck(cfg, fresh, asOf = P.asOf) {
   });
 }
 
+// ── 4. 단지 좌표와 주변 역·초등학교 (카카오 로컬) ────────────────────────
+const kakao = (cfg, pathQs) => getJson(`https://dapi.kakao.com${pathQs}`, { Authorization: `KakaoAK ${cfg.kakaoKey}` });
+
+/** 주소·단지명 → 좌표. 카카오 키가 없으면 브이월드 주소검색 좌표 */
+async function geocode(cfg, query, fresh) {
+  const q = String(query || '').trim();
+  if (q.length < 3) throw new Error('주소나 단지명을 입력하세요');
+  if (!cfg.kakaoKey && !cfg.vworldKey) throw new NotConfigured('카카오 REST 키(KAKAO_REST_KEY) 또는 브이월드 키(VWORLD_KEY)');
+  return cached('geo:' + q, 7 * 24 * HOUR, fresh, async () => {
+    try {
+      let hit = null;
+      if (cfg.kakaoKey) {
+        const a = await kakao(cfg, `/v2/local/search/address.json?size=1&query=${encodeURIComponent(q)}`);
+        hit = asArray(a.documents)[0];
+        if (!hit) hit = asArray((await kakao(cfg, `/v2/local/search/keyword.json?size=1&query=${encodeURIComponent(q)}`)).documents)[0];
+        if (hit) hit = { lat: Number(hit.y), lng: Number(hit.x), label: hit.address_name || hit.place_name };
+      } else {
+        const s = await getJson(`https://api.vworld.kr/req/search?service=search&request=search&version=2.0&size=1&type=address&category=parcel&format=json&query=${encodeURIComponent(q)}&key=${encodeURIComponent(cfg.vworldKey)}`);
+        const it = asArray(s.response && s.response.result && s.response.result.items)[0];
+        if (it && it.point) hit = { lat: Number(it.point.y), lng: Number(it.point.x), label: (it.address && it.address.parcel) || q };
+      }
+      if (!hit || !isFinite(hit.lat)) throw new Error('위치를 찾지 못했습니다');
+      track('geo', true);
+      return { ...hit, fetchedAt: new Date().toISOString() };
+    } catch (err) { track('geo', false, err.message); throw err; }
+  });
+}
+
+/** 좌표 주변 가장 가까운 지하철역(SW8)·초등학교(SC4) */
+async function nearby(cfg, lat, lng, fresh) {
+  if (!cfg.kakaoKey) throw new NotConfigured('카카오 REST 키(KAKAO_REST_KEY)');
+  if (!isFinite(lat) || !isFinite(lng)) throw new Error('좌표가 필요합니다');
+  const key = `near:${lat.toFixed(4)},${lng.toFixed(4)}`;
+  return cached(key, 30 * 24 * HOUR, fresh, async () => {
+    try {
+      const at = `x=${lng}&y=${lat}&sort=distance`;
+      const st = asArray((await kakao(cfg, `/v2/local/search/category.json?category_group_code=SW8&radius=3000&size=3&${at}`)).documents);
+      const sc = asArray((await kakao(cfg, `/v2/local/search/category.json?category_group_code=SC4&radius=2000&size=15&${at}`)).documents)
+        .filter((d) => /초등학교/.test(d.place_name || ''));
+      const pick = (d) => (d ? { name: d.place_name, meters: Number(d.distance) || null } : null);
+      track('nearby', true);
+      return { station: pick(st[0]), school: pick(sc[0]), fetchedAt: new Date().toISOString() };
+    } catch (err) { track('nearby', false, err.message); throw err; }
+  });
+}
+
 // 출처별 설정·최근 상태
 function sourcesStatus(cfg) {
   const s = (id) => status.get(id) || null;
@@ -298,12 +347,13 @@ function sourcesStatus(cfg) {
     { id: 'landUse', name: '토지이용계획 (토지거래허가·정비구역, 브이월드)', configured: !!cfg.vworldKey, how: 'vworld.kr 인증키 (VWORLD_KEY)', last: s('landUse') },
     { id: 'redevSeoul', name: '서울 정비사업 현황 (열린데이터광장 OA-2253)', configured: !!(cfg.seoulKey && cfg.seoulRedevService), how: 'SEOUL_OPEN_API_KEY + SEOUL_REDEV_SERVICE', last: s('redevSeoul') },
     { id: 'redevGyeonggi', name: '경기 정비사업 추진현황 (경기데이터드림)', configured: !!(cfg.ggKey && cfg.ggRedevService), how: 'GG_OPEN_API_KEY + GG_REDEV_SERVICE', last: s('redevGyeonggi') },
+    { id: 'nearby', name: '단지 좌표·주변 역·초등학교 (카카오 로컬)', configured: !!cfg.kakaoKey, how: 'developers.kakao.com REST API 키 (KAKAO_REST_KEY)', last: s('nearby') || s('geo') },
     { id: 'regulation', name: '규제 고시·법령 변경 감지 (국토부·정책브리핑 RSS, 법제처)', configured: true, how: 'RSS는 키 없음, 법령은 LAW_OC', last: s('regulation') },
   ];
 }
 
 module.exports = {
   loadConfig, setFetcher, clearCache, track, NotConfigured,
-  landUse, redevSearch, regulationCheck, sourcesStatus,
+  landUse, redevSearch, regulationCheck, geocode, nearby, sourcesStatus,
   parseVworldSearch, parseLandUse, classifyZones, parseSeoulRows, parseGgRows, normalizeRedevRow, parseRss, parseLawSearch,
 };

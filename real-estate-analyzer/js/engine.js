@@ -707,9 +707,37 @@
         date: `${y}-${m.padStart(2, '0')}-${(d || '1').padStart(2, '0')}`,
         area: Number(tag(it, 'excluUseAr')) || null, price,
         name: tag(it, 'aptNm'), floor: floor === '' ? null : Number(floor), dong: tag(it, 'umdNm'),
+        jibun: tag(it, 'jibun'), builtYear: Number(tag(it, 'buildYear')) || null, sgg: tag(it, 'sggCd'),
       });
     }
     return { items: out, totalCount: Number(tag(xml, 'totalCount')) || out.length };
+  }
+
+  // 국토부 아파트 전월세 실거래 (RTMSDataSvcAptRent) XML. 보증금·월세는 만원 단위
+  function parseRtmsRentXml(xml) {
+    const tag = (src, ...names) => {
+      for (const name of names) {
+        const m = src.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`));
+        if (m) return m[1].trim();
+      }
+      return '';
+    };
+    const code = tag(xml, 'resultCode');
+    if (code && !/^0+$/.test(code)) throw new Error(`API 오류 ${code}: ${tag(xml, 'resultMsg')}`);
+    const out = [];
+    for (const it of xml.split('<item>').slice(1).map((c) => c.split('</item>')[0])) {
+      const deposit = Number(tag(it, 'deposit', '보증금액').replace(/[^0-9]/g, '')) * 1e4;
+      const monthly = Number(tag(it, 'monthlyRent', '월세금액').replace(/[^0-9]/g, '')) * 1e4;
+      const y = tag(it, 'dealYear', '년'), m = tag(it, 'dealMonth', '월'), d = tag(it, 'dealDay', '일');
+      if (!deposit || !y) continue;
+      out.push({
+        date: `${y}-${m.padStart(2, '0')}-${(d || '1').padStart(2, '0')}`,
+        area: Number(tag(it, 'excluUseAr', '전용면적')) || null, deposit, monthly,
+        name: tag(it, 'aptNm', '아파트'), dong: tag(it, 'umdNm', '법정동'), jibun: tag(it, 'jibun', '지번'),
+        builtYear: Number(tag(it, 'buildYear', '건축년도')) || null,
+      });
+    }
+    return { items: out };
   }
 
   // ── 소득·상환 능력 (실제 월 현금흐름) ─────────────────────────────────
@@ -870,7 +898,8 @@
     const h = rows[hi].map((c) => c.trim());
     const col = (re) => h.findIndex((c) => re.test(c));
     const cPrice = col(/거래금액/), cArea = col(/전용면적/), cYm = col(/계약년월/), cDay = col(/계약일/),
-      cName = col(/단지명/), cFloor = col(/^층$/), cCancel = col(/해제사유/);
+      cName = col(/단지명/), cFloor = col(/^층$/), cCancel = col(/해제사유/),
+      cBuilt = col(/건축년도/), cSgg = col(/^시군구$/), cJibun = col(/^번지$/);
     const out = [];
     for (const r of rows.slice(hi + 1)) {
       const price = Number(String(r[cPrice] || '').replace(/[^0-9]/g, '')) * 1e4;
@@ -882,9 +911,39 @@
         date: ym.length >= 6 ? `${ym.slice(0, 4)}-${ym.slice(4, 6)}-${day.padStart(2, '0')}` : null,
         area: Number(r[cArea]) || null, price,
         name: cName >= 0 ? r[cName] : '', floor: cFloor >= 0 && String(r[cFloor]).trim() !== '' ? Number(r[cFloor]) : null,
+        builtYear: cBuilt >= 0 ? Number(r[cBuilt]) || null : null,
+        sgg: cSgg >= 0 ? String(r[cSgg] || '').trim() : '', jibun: cJibun >= 0 ? String(r[cJibun] || '').trim() : '',
+        dong: cSgg >= 0 ? String(r[cSgg] || '').trim().split(/\s+/).pop() : '',
       });
     }
     return out.filter((t) => t.date).sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  /** 국토부 전월세 실거래 CSV (보증금·월세 열). 금액(만원) → 원 */
+  function parseRentTransactions(text) {
+    const rows = parseCsv(text.replace(/^\uFEFF/, ''));
+    const hi = rows.findIndex((r) => r.some((c) => c.includes('보증금')) && r.some((c) => c.includes('계약년월')));
+    if (hi < 0) throw new Error('보증금 열을 찾을 수 없습니다');
+    const h = rows[hi].map((c) => c.trim());
+    const col = (re) => h.findIndex((c) => re.test(c));
+    const cDep = col(/보증금/), cMon = col(/월세/), cArea = col(/전용면적/), cYm = col(/계약년월/), cDay = col(/계약일/),
+      cName = col(/단지명/), cBuilt = col(/건축년도/), cSgg = col(/^시군구$/), cJibun = col(/^번지$/);
+    const num = (v) => Number(String(v || '').replace(/[^0-9]/g, '')) * 1e4;
+    const out = [];
+    for (const r of rows.slice(hi + 1)) {
+      const deposit = num(r[cDep]);
+      if (!deposit) continue;
+      const ym = String(r[cYm] || '').replace(/[^0-9]/g, '');
+      if (ym.length < 6) continue;
+      out.push({
+        date: `${ym.slice(0, 4)}-${ym.slice(4, 6)}-${(String(r[cDay] || '1').replace(/[^0-9]/g, '') || '1').padStart(2, '0')}`,
+        area: Number(r[cArea]) || null, deposit, monthly: cMon >= 0 ? num(r[cMon]) : 0,
+        name: cName >= 0 ? r[cName] : '', builtYear: cBuilt >= 0 ? Number(r[cBuilt]) || null : null,
+        sgg: cSgg >= 0 ? String(r[cSgg] || '').trim() : '', jibun: cJibun >= 0 ? String(r[cJibun] || '').trim() : '',
+        dong: cSgg >= 0 ? String(r[cSgg] || '').trim().split(/\s+/).pop() : '',
+      });
+    }
+    return out;
   }
 
   /** 비교사례: 면적 ±tol 이내 거래로 ㎡당 가격 추세(선형회귀)와 대상 면적 추정가 */
@@ -915,6 +974,6 @@
     pmt, pv, schedule, annualDebtService, loanLimit, policyLoanEligibility,
     generalAcqRate, acquisitionTax, brokerFee, leaseBase, bondCost, closingCosts,
     holdingTax, capitalGainsTax, simulate, breakevenAppreciation, monteCarlo,
-    stressTest, verdict, gapInvestment, privateFinance, repaymentCapacity, existingDebtService, maxAffordablePrice, sensitivity, timingCompare, parseRtmsXml, parseCsv, parseTransactions, comparables, region,
+    stressTest, verdict, gapInvestment, privateFinance, repaymentCapacity, existingDebtService, maxAffordablePrice, sensitivity, timingCompare, parseRtmsXml, parseRtmsRentXml, parseCsv, parseTransactions, parseRentTransactions, comparables, region,
   };
 });

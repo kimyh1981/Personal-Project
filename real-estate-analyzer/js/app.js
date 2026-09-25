@@ -230,7 +230,8 @@
   }
 
   // ── 계산 ──────────────────────────────────────────────────────────────
-  function compute(i, cond) {
+  // opts.light: 추천처럼 여러 곳을 빨리 판정할 때 무거운 계산(민감도·몬테카를로 대부분)을 줄인다
+  function compute(i, cond, opts = {}) {
     withIncome(i);
     const hh = household(i);
     const r = E.region(i.regionId);
@@ -278,7 +279,7 @@
     };
     const base = E.simulate(sim);
     const breakeven = livesIn ? E.breakevenAppreciation(sim) : undefined;
-    const mc = livesIn ? E.monteCarlo(sim, { runs: 800, seed: 20260925, appreciationVol: i.appreciationVol, invVol: i.invVol }) : null;
+    const mc = livesIn ? E.monteCarlo(sim, { runs: opts.light ? 150 : 800, seed: 20260925, appreciationVol: i.appreciationVol, invVol: i.invVol }) : null;
     const gap = livesIn ? null : E.gapInvestment({
       price: i.price, deposit: tenantDeposit, loan, rate: i.rate, termYears, method: i.method, closing: closing.total,
       years: i.years, appreciation: i.appreciation, rentGrowth: i.rentGrowth, useRenewalRight: i.useRenewalRight, invReturn: i.invReturn,
@@ -295,13 +296,13 @@
       cash: i.cash, moveCost: i.moveCost, homesAfter: hh.homesAfter, temporaryTwo: hh.temporaryTwo, livesIn, propertyType: i.propertyType, extraCash: privateCash,
       areaOver85: i.areaM2 > 85, publicRatio: i.publicRatio, bondDiscount: i.bondDiscount, vat: i.vat,
     });
-    const affordBank = privateCash ? E.maxAffordablePrice({
+    const affordBank = privateCash && !opts.light ? E.maxAffordablePrice({
       regionId: i.regionId, buyerType: i.buyerType, annualIncome: i.annualIncome, existingAnnualDebtService: i.existingDebt,
       rate: i.rate, termYears: i.termYears, method: i.method, rateType: i.rateType, lender: i.lender,
       cash: i.cash, moveCost: i.moveCost, homesAfter: hh.homesAfter, temporaryTwo: hh.temporaryTwo, livesIn, propertyType: i.propertyType,
       areaOver85: i.areaM2 > 85, publicRatio: i.publicRatio, bondDiscount: i.bondDiscount, vat: i.vat,
     }) : null;
-    const sens = livesIn && base.feasible ? E.sensitivity(sim) : null;
+    const sens = livesIn && base.feasible && !opts.light ? E.sensitivity(sim) : null;
     const jeonseRatio = i.jeonsePrice > 0 ? i.jeonsePrice / i.price : null;
     const capacity = E.repaymentCapacity({
       netMonthly: i.netMonthly, living: i.monthlyLiving, existingMonthly: i.existingDebt / 12,
@@ -1045,6 +1046,272 @@
     update();
   }
 
+  // ── 최적지 추천 ───────────────────────────────────────────────────────
+  const RECO = window.REA_RECO, GEO = window.REA_GEO;
+  const RECO_KEY = 'rea-reco-v1';
+  let recoState = { regions: [], result: null, demo: false };
+  function recoSettings() {
+    return {
+      regions: recoState.regions.slice(),
+      work: $('recoWork').value, workAddr: $('recoWorkAddr').value.trim(),
+      areaMin: parseFloat($('recoAreaMin').value) || 0, areaMax: parseFloat($('recoAreaMax').value) || 999,
+      maxAge: parseFloat($('recoMaxAge').value) || null, months: Number($('recoMonths').value) || 6,
+    };
+  }
+  function saveReco() { try { localStorage.setItem(RECO_KEY, JSON.stringify(recoSettings())); } catch (_) { /* 무시 */ } }
+  function initReco() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(RECO_KEY) || 'null'); } catch (_) { saved = null; }
+    recoState.regions = saved && saved.regions && saved.regions.length ? saved.regions : [$('regionId').value];
+    $('recoWork').innerHTML = GEO.WORKPLACES.map((w) => `<option value="${w.id}">${esc(w.name)}</option>`).join('') + '<option value="custom">직접 입력 (주소)</option><option value="none">통근 고려 안 함</option>';
+    if (saved) {
+      $('recoWork').value = saved.work || 'gbd';
+      $('recoWorkAddr').value = saved.workAddr || '';
+      $('recoAreaMin').value = saved.areaMin || 59; $('recoAreaMax').value = saved.areaMax < 999 ? saved.areaMax : 85;
+      $('recoMaxAge').value = saved.maxAge || ''; $('recoMonths').value = String(saved.months || 6);
+    }
+    $('recoWorkAddrWrap').hidden = $('recoWork').value !== 'custom';
+    renderRecoRegions();
+  }
+  function renderRecoRegions() {
+    const groups = {};
+    for (const r of P.REGIONS) if (r.lawd || r.id === 'incheon') (groups[r.group] ||= []).push(r);
+    $('recoRegions').innerHTML = Object.entries(groups).map(([g, rs]) => `<div class="reco-group"><span>${esc(g)}</span>${rs.map((r) =>
+      `<button type="button" class="pill" data-rid="${esc(r.id)}" aria-pressed="${recoState.regions.includes(r.id)}">${esc(r.name.replace(/^(서울|경기) /, ''))}</button>`).join('')}</div>`).join('');
+  }
+  $('recoRegions').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-rid]');
+    if (!b) return;
+    const id = b.dataset.rid;
+    if (recoState.regions.includes(id)) recoState.regions = recoState.regions.filter((x) => x !== id);
+    else if (recoState.regions.length < 6) recoState.regions.push(id);
+    renderRecoRegions(); saveReco();
+  });
+  ['recoWork', 'recoWorkAddr', 'recoAreaMin', 'recoAreaMax', 'recoMaxAge', 'recoMonths'].forEach((id) => $(id).addEventListener('change', () => {
+    $('recoWorkAddrWrap').hidden = $('recoWork').value !== 'custom';
+    saveReco();
+  }));
+
+  // 시군구 문구(“서울특별시 마포구 아현동”)로 지역 찾기
+  function regionFromText(text) {
+    const t = String(text || '');
+    return P.REGIONS.find((r) => {
+      const parts = r.name.split(' ');
+      const tail = parts.slice(1).join(' ');
+      return tail && t.includes(tail) && (parts[0] === '경기' ? /경기/.test(t) : parts[0] === '서울' ? /서울/.test(t) : true);
+    }) || null;
+  }
+
+  async function workplaceCoords(st) {
+    if (st.work === 'none') return null;
+    if (st.work !== 'custom') return GEO.WORKPLACES.find((w) => w.id === st.work).at;
+    if (!st.workAddr || !liveState.available) return null;
+    try { const g = await liveGet(`api/geo?q=${encodeURIComponent(st.workAddr)}`); return [g.lat, g.lng]; } catch (_) { return null; }
+  }
+
+  // 실거래 모으기: 로컬 서버 API → 지역별 매매·전월세
+  async function collectLive(st, status) {
+    const out = {};
+    const months = recentMonths(st.months + 1);
+    const key = $('apiKey') ? $('apiKey').value.trim() : '';
+    const jobs = [];
+    for (const rid of st.regions) {
+      const r = E.region(rid);
+      if (!r.lawd) continue;
+      out[rid] = { sales: [], rents: [] };
+      for (const ym of months) {
+        jobs.push({ rid, url: `api/rtms?lawd=${r.lawd}&ym=${ym}`, kind: 'sales' });
+        jobs.push({ rid, url: `api/rtms-rent?lawd=${r.lawd}&ym=${ym}`, kind: 'rents' });
+      }
+    }
+    let done = 0, failed = null;
+    const worker = async () => {
+      while (jobs.length && !failed) {
+        const j = jobs.shift();
+        try {
+          const res = await fetch(j.url + (key ? `&key=${encodeURIComponent(key)}` : ''));
+          const text = await res.text();
+          if (!res.ok) throw new Error(text.slice(0, 120));
+          out[j.rid][j.kind].push(...(j.kind === 'sales' ? E.parseRtmsXml(text).items : E.parseRtmsRentXml(text).items));
+        } catch (err) { failed = err; }
+        status(`실거래 불러오는 중 ${++done}건`);
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    if (failed) throw failed;
+    return out;
+  }
+
+  // 단지 좌표·주변 역·학교 (카카오 키가 있을 때만)
+  async function enrich(list, status) {
+    const src = (liveState.sources || []).find((x) => x.id === 'nearby');
+    if (!liveState.available || !src || !src.configured) return false;
+    let k = 0;
+    const queue = list.slice();
+    const worker = async () => {
+      while (queue.length) {
+        const c = queue.shift();
+        try {
+          const r = E.region(c.regionId);
+          const g = await liveGet(`api/geo?q=${encodeURIComponent(`${r.name.replace(/^경기 /, '경기도 ')} ${c.dong} ${c.jibun || c.name}`)}`);
+          c.coords = [g.lat, g.lng];
+          const n = await liveGet(`api/nearby?lat=${g.lat}&lng=${g.lng}`);
+          if (n.station) { c.subwayMin = GEO.walkMinutes(n.station.meters); c.stationName = n.station.name; }
+          if (n.school) { c.schoolMin = GEO.walkMinutes(n.school.meters); c.schoolName = n.school.name; }
+        } catch (_) { /* 좌표를 못 찾으면 지역 중심으로 추정 */ }
+        status(`입지 확인 중 ${++k} / ${list.length}`);
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    return true;
+  }
+
+  // 후보 한 곳을 지금 입력한 조건으로 판정
+  function analyzeCandidate(c, baseV) {
+    const V = { ...baseV };
+    V.regionId = c.regionId; V.propertyType = '아파트';
+    V.price = String(Math.round(c.price / MAN)); V.areaM2 = String(c.area);
+    const jeonse = c.jeonse || Number(baseV.jeonsePrice) * MAN || c.price * 0.55;
+    V.jeonsePrice = String(Math.round(jeonse / MAN));
+    if (!V.rentMonthly || Number(V.rentMonthly) === 0) V.rentDeposit = V.jeonsePrice;
+    V.recentTrades = String(Math.round(c.price / MAN));
+    if (c.subwayMin != null) V.subwayWalkMin = String(c.subwayMin);
+    if (c.schoolMin != null) V.schoolWalkMin = String(c.schoolMin);
+    if (c.commuteMin != null) V.jobCommuteMin = String(c.commuteMin);
+    V.reconTarget = false; V.parcelAddress = '';
+    const i = read(V), cond = readConditions(V);
+    const k = compute(i, cond, { light: true });
+    const block = k.assess.flags.find((f) => f.level === 'block');
+    return {
+      V, k, score: k.v.score, blocked: !!block, blockReason: block ? block.message : '',
+      fundingGap: k.fundingGap, privateUsed: k.privateUsed, surplus: k.capacity.surplus, net: k.capacity.net, maxPrice: k.afford.price,
+    };
+  }
+
+  async function runReco(source, files) {
+    const st = recoSettings();
+    const status = (t) => { $('recoStatus').textContent = t; };
+    const btn = $('recoRun');
+    if (!st.regions.length && source !== 'csv') { status('찾을 지역을 하나 이상 고르세요.'); return; }
+    btn.disabled = true;
+    try {
+      let data;
+      if (source === 'demo') data = (() => { const d = RECO.demoData(st.regions, 11, Object.fromEntries(st.regions.map((r) => [r, E.region(r).name]))); return Object.fromEntries(st.regions.map((r) => [r, { sales: d.sales[r], rents: d.rents[r] }])); })();
+      else if (source === 'csv') {
+        data = {};
+        for (const f of files) {
+          const text = await readFileText(f);
+          const isRent = /보증금/.test(text.slice(0, 5000));
+          const rows = isRent ? E.parseRentTransactions(text) : E.parseTransactions(text);
+          for (const t of rows) {
+            const r = regionFromText(t.sgg) || E.region($('regionId').value);
+            (data[r.id] ||= { sales: [], rents: [] })[isRent ? 'rents' : 'sales'].push(t);
+          }
+        }
+      } else {
+        if (!liveState.available) { status('실시간 찾기는 로컬 서버(npm start)로 열어야 합니다. 지금은 CSV를 올리거나 예시 데이터로 볼 수 있습니다.'); return; }
+        data = await collectLive(st, status);
+      }
+      const work = await workplaceCoords(st);
+      const thisYear = new Date().getFullYear();
+      let cands = [];
+      for (const [rid, d] of Object.entries(data)) {
+        cands.push(...RECO.aggregate(d.sales || [], d.rents || [], { months: st.months, regionId: rid }));
+      }
+      const total = cands.length;
+      cands = cands.filter((c) => c.area >= st.areaMin && c.area <= st.areaMax && (!st.maxAge || !c.builtYear || thisYear - c.builtYear <= st.maxAge));
+      // 판정 전에 예산 근처만 남긴다 (지금 조건의 최대 매수가 × 1.1)
+      const baseV = formValues();
+      const cap = compute(read(baseV), readConditions(baseV), { light: true }).afford.price;
+      cands = cands.filter((c) => c.price <= cap * 1.1).sort((a, b) => (a.vsRegion || 0) - (b.vsRegion || 0)).slice(0, 60);
+      cands.forEach((c) => RECO.locate(c, work));
+      const enriched = source !== 'demo' && (await enrich(cands.slice(0, 30), status));
+      if (enriched) cands.forEach((c) => RECO.locate(c, work));
+      status(`판정 중… ${cands.length}곳`);
+      await new Promise((r) => setTimeout(r, 20));
+      const res = RECO.rank(cands, (c) => analyzeCandidate(c, baseV), { purpose: $('purpose').value, thisYear, limit: 12 });
+      recoState.result = { ...res, total, source, enriched, work: st.work, analyzedAt: new Date().toISOString() };
+      renderReco();
+      status('');
+    } catch (err) {
+      status(`찾지 못했습니다: ${err.message}`);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+  function readFileText(f) {
+    return new Promise((resolve) => {
+      const r = new FileReader();
+      r.onload = () => {
+        if (/거래금액|보증금/.test(r.result)) return resolve(r.result);
+        const r2 = new FileReader();
+        r2.onload = () => resolve(r2.result);
+        r2.readAsText(f, 'euc-kr');
+      };
+      r.readAsText(f, 'utf-8');
+    });
+  }
+
+  function renderReco() {
+    const res = recoState.result;
+    const out = $('recoOut');
+    if (!res) { out.innerHTML = ''; return; }
+    const blocked = res.excluded.filter((x) => !/부족/.test(x.reason)).length;
+    const over = res.excluded.length - blocked;
+    const head = `<div class="card">
+      ${res.source === 'demo' ? `<p class="demo-note">${chip('warning', '예시')} 가상의 예시 데이터입니다. 실제 단지·시세가 아니며 화면 동작을 보여드리기 위한 것입니다.</p>` : ''}
+      <h3>${res.ranked.length ? `조건에 맞는 곳 ${res.ranked.length}곳` : '조건에 맞는 곳이 없습니다'}</h3>
+      <p class="muted">실거래 단지·평형 ${res.total}개 중 면적·연식·예산 근처 ${res.considered}곳을 판정 · 예산 초과 ${over}곳, 규제·조건 차단 ${blocked}곳 제외 · ${res.enriched ? '역·학교는 카카오 지도 기준' : '역·학교 거리는 조건 입력값 사용'}${res.work !== 'none' ? ' · 통근은 거리 기반 추정' : ''}</p>
+      ${!res.ranked.length && res.excluded.length ? `<ul class="plain">${res.excluded.slice(0, 5).map((x) => `<li>${esc(x.c.name)} ${x.c.area}㎡ — ${esc(x.reason)}</li>`).join('')}</ul>` : ''}
+    </div>`;
+    const cards = res.ranked.map((r, k) => {
+      const c = r.c, a = r.a, reg = E.region(c.regionId);
+      const age = c.builtYear ? new Date().getFullYear() - c.builtYear : null;
+      return `<div class="card reco-card">
+        <div class="reco-head">
+          <span class="rank">${k + 1}</span>
+          <div class="reco-title"><h3>${esc(c.name)} <span class="unit">전용 ${c.area}㎡</span></h3>
+            <p class="muted">${esc(reg.name)} ${esc(c.dong)}${c.builtYear ? ` · ${c.builtYear}년 준공 (${age}년차)` : ''} · 최근 ${c.count}건</p></div>
+          <span class="reco-score" data-tone="${r.total >= 75 ? 'good' : r.total >= 55 ? 'warning' : 'critical'}"><b>${r.total}</b>적합도</span>
+        </div>
+        <div class="tbl-wrap"><table><tbody>
+          <tr><td>실거래 중위</td><td class="n">${esc(won(c.price))}</td></tr>
+          ${c.jeonse ? `<tr><td>전세 (비율)</td><td class="n">${esc(won(c.jeonse))} (${pct(c.jeonse / c.price, 0)})</td></tr>` : ''}
+          <tr><td>필요 자기자금</td><td class="n">${esc(won(a.k.need - (a.k.privateCash || 0)))}</td></tr>
+          <tr><td>대출 가능액</td><td class="n">${esc(won(a.k.loan))}</td></tr>
+          <tr><td>매달 남는 돈</td><td class="n ${a.surplus >= 0 ? 'pos' : 'neg'}">${esc(won(a.surplus, { sign: true }))}</td></tr>
+          ${c.commuteMin != null ? `<tr><td>통근 ${c.commuteEstimated ? '(추정)' : ''}</td><td class="n">약 ${c.commuteMin}분</td></tr>` : ''}
+          ${c.subwayMin != null ? `<tr><td>${esc(c.stationName || '지하철역')}</td><td class="n">도보 ${c.subwayMin}분</td></tr>` : ''}
+        </tbody></table></div>
+        ${r.strengths.length ? `<ul class="pros">${r.strengths.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+        ${r.cautions.length ? `<ul class="cons">${r.cautions.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+        <div class="row"><button type="button" class="primary" data-reco-apply="${k}">이 단지로 상세 판정</button><button type="button" class="ghost" data-reco-cand="${k}">후보 비교에 담기</button></div>
+      </div>`;
+    }).join('');
+    out.innerHTML = head + cards;
+  }
+  $('recoOut').addEventListener('click', (e) => {
+    const res = recoState.result;
+    const ap = e.target.closest('[data-reco-apply]'), cd = e.target.closest('[data-reco-cand]');
+    if (ap) {
+      const r = res.ranked[Number(ap.dataset.recoApply)];
+      applyValues(r.a.V);
+      selectTab('conditions');
+      window.scrollTo({ top: 0 });
+    }
+    if (cd) {
+      const r = res.ranked[Number(cd.dataset.recoCand)];
+      if (candidates.length >= 4) { cd.textContent = '후보가 가득 찼습니다 (4개)'; return; }
+      candidates.push({ id: Date.now(), name: `${r.c.name} ${r.c.area}㎡${res.source === 'demo' ? ' (예시)' : ''}`, values: r.a.V });
+      persistCands();
+      cd.textContent = '담았습니다';
+      cd.disabled = true;
+    }
+  });
+  $('recoRun').addEventListener('click', () => runReco('live'));
+  $('recoDemo').addEventListener('click', () => runReco('demo'));
+  $('recoCsv').addEventListener('change', (e) => { if (e.target.files.length) runReco('csv', [...e.target.files]); });
+
   // ── 흐름 ──────────────────────────────────────────────────────────────
   let timer = null;
   function update() {
@@ -1126,6 +1393,7 @@
     if (load) { const cd = candidates.find((x) => String(x.id) === load.dataset.load); if (cd) { applyValues(cd.values); selectTab('loan'); } }
     if (del) { candidates = candidates.filter((x) => String(x.id) !== del.dataset.del); persistCands(); renderCandidates(); }
   });
+  initReco();
   initApi();
   // 주택 유형에 맞춰 공시가격 비율 기본값을 바꾼다 (단독주택은 현실화율이 낮다)
   $('propertyType').addEventListener('change', () => { $('publicRatio').value = P.PROPERTY.publicRatio[$('propertyType').value] ?? 69; });

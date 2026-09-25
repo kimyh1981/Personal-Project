@@ -7,6 +7,7 @@
   "seoulRedevService": "OA-2253 '서울시 재개발 재건축 정비사업 현황' 상세 페이지 샘플 URL의 서비스명",
   "ggKey": "경기데이터드림 인증키",
   "ggRedevService": "경기데이터드림 '일반 정비 사업 추진 현황' Open API 서비스명",
+  "kakaoKey": "카카오 디벨로퍼스 REST API 키 — 단지 좌표·주변 지하철역·초등학교",
   "lawOc": "법제처 국가법령정보 공동활용 OC (가입 이메일의 @ 앞부분)",
   "newsFeeds": ["https://www.molit.go.kr/USR/NEWS/m_71/rss.jsp", "https://www.korea.kr/rss/policy.xml"]
 }
