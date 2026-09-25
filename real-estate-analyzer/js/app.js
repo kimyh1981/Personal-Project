@@ -1017,6 +1017,8 @@
 
   function selectTab(name) {
     document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
+    const active = document.querySelector(`.tabs button[data-tab="${name}"]`);
+    if (active && active.scrollIntoView) active.scrollIntoView({ inline: 'center', block: 'nearest' });
     document.querySelectorAll('.tab').forEach((t) => { t.hidden = t.id !== 'tab-' + name; });
     try { localStorage.setItem('rea-tab', name); } catch (_) { /* 무시 */ }
     if (name === 'candidates') renderCandidates();
