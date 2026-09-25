@@ -122,20 +122,26 @@
       { key: 'cap', label: '주담대 절대한도', amount: cap },
       { key: 'dsr', label: dsrExempt ? 'DSR (1억 이하 미적용)' : `DSR ${Math.round(dsrLimit * 100)}% (스트레스 +${(stress * 100).toFixed(2)}%p)`, amount: dsrAmount },
     ];
+    if ((r.capital || r.regulated) && i.livesIn === false) candidates.unshift({ key: 'residence', label: '비거주 (전입의무)', amount: 0 });
     const binding = candidates.reduce((a, b) => (b.amount < a.amount ? b : a));
     const amount = Math.max(0, Math.floor(binding.amount / 1e6) * 1e6); // 100만원 단위 절사
 
     const conditions = [];
-    if (i.buyerType === 'one' && (r.capital || r.regulated)) conditions.push('수도권·규제지역 1주택자는 기존 주택 처분 약정(6개월) 없이는 주담대 불가');
-    if (i.buyerType === 'multi' && (r.capital || r.regulated)) conditions.push('수도권·규제지역 2주택 이상 보유자는 주택구입 주담대 불가');
-    if (r.capital || r.regulated) conditions.push(`대출 실행 후 ${P.LOAN.moveInMonths}개월 내 전입 의무`);
-    if (r.landPermit) conditions.push('토지거래허가 필요 — 허가 후 2년 실거주 의무, 전세 낀 매수 불가');
+    let blockedReason = '';
+    if (i.buyerType === 'one' && (r.capital || r.regulated)) blockedReason = '수도권·규제지역 1주택자는 기존 주택 처분 약정(6개월) 없이는 주담대 불가';
+    if (i.buyerType === 'multi' && (r.capital || r.regulated)) blockedReason = '수도권·규제지역 2주택 이상 보유자는 주택구입 주담대 불가';
+    if (blockedReason) conditions.push(blockedReason);
+    if ((r.capital || r.regulated) && i.livesIn === false && ltv > 0) {
+      blockedReason = `수도권·규제지역 주담대는 ${P.LOAN.moveInMonths}개월 내 전입 의무 → 비거주(갭) 매수에는 주담대 사용 불가`;
+      conditions.push(blockedReason);
+    } else if (r.capital || r.regulated) conditions.push(`대출 실행 후 ${P.LOAN.moveInMonths}개월 내 전입 의무`);
+    if (r.landPermit && P.PROPERTY.landPermitTypes.includes(i.propertyType || '아파트')) conditions.push('토지거래허가 필요 — 허가 후 2년 실거주 의무, 전세 낀 매수 불가');
     if (r.regulated || i.price >= 6 * EOK) conditions.push('자금조달계획서 제출 대상' + (r.regulated ? ' (증빙자료 포함)' : ''));
     if (termYears < i.termYears) conditions.push(`수도권·규제지역 만기 상한 ${P.LOAN.capitalMaxTermYears}년 적용`);
 
     return {
       region: r, zone, ltv, ltvAmount, cap, dsrAmount, dsrRate, stress, dsrLimit, termYears,
-      binding, candidates, amount, conditions,
+      binding, candidates, amount, conditions, blockedReason,
       monthlyPayment: i.method === 'equalPrincipal'
         ? schedule(amount, i.rate, termYears, 'equalPrincipal').payment[0] || 0
         : pmt(amount, i.rate, termYears * 12),
@@ -179,6 +185,11 @@
   function acquisitionTax(i) {
     const r = region(i.regionId);
     const A = P.ACQUISITION;
+    if (i.propertyType === '오피스텔') {
+      const O = P.PROPERTY.officetel;
+      const acq = floorWon(i.price * O.acqRate), edu = floorWon(i.price * O.eduRate), rural = floorWon(i.price * O.ruralRate);
+      return { rate: O.acqRate, heavy: false, credit: 0, acquisition: acq, education: edu, rural, total: acq + edu + rural, note: '오피스텔 취득세 4% (주택 수와 무관)' };
+    }
     const n = i.temporaryTwo && i.homesAfter === 2 ? 1 : i.homesAfter;
     let rate = generalAcqRate(i.price);
     let heavy = false;
@@ -441,7 +452,7 @@
     const sellFee = brokerFee(price, 'sale', s.vat);
     const cgt = capitalGainsTax({
       buyPrice: s.price, sellPrice: price, expenses: s.closing + sellFee,
-      yearsHeld: s.years, yearsResided: s.years, oneHouse: s.oneHouse,
+      yearsHeld: s.years, yearsResided: s.yearsResided ?? s.years, oneHouse: s.oneHouse,
       regulatedAtPurchase: r.regulated, homesAtSale: s.homesAfter, regulatedAtSale: r.regulated,
     });
     const buyFinal = buyPort + price - balance - sellFee - cgt.total;
@@ -451,6 +462,52 @@
       salePrice: price, sellFee, cgt, balance, buyUpfront, rentUpfront,
       buyHousingCost, rentHousingCost,
       feasible: buyUpfront + s.moveCost <= s.cash && rentUpfront <= s.cash,
+    };
+  }
+
+  /**
+   * 비거주 투자(전세 낀 매수) 수익: 투입 자기자본을 대안 투자와 비교.
+   * s: price, deposit, closing, years, appreciation, rentGrowth, useRenewalRight, invReturn,
+   *    regionId, homesAfter, oneHouse, publicRatio, age, reform2026, vat, loan, rate, termYears, method
+   */
+  function gapInvestment(s) {
+    const r = region(s.regionId);
+    const im = s.invReturn;
+    const equity = s.price - s.deposit - (s.loan || 0) + s.closing;
+    let price = s.price, deposit = s.deposit, index = 1;
+    let alt = equity; // 같은 돈을 대안 투자에 넣었을 때
+    let side = 0; // 투자 쪽 부수 현금흐름의 누적 (보증금 증액 수령 +, 보유세·이자 −), 대안 수익률로 복리
+    const sch = schedule(s.loan || 0, s.rate || 0, s.termYears || 30, s.method);
+    const series = [{ year: 0, invest: equity, alt }];
+    for (let y = 0; y < s.years; y++) {
+      const pp = price * (s.publicRatio ?? P.HOLDING.publicPriceRatio);
+      const tax = holdingTax({ publicPrice: pp, oneHouse: s.oneHouse, homes: s.homesAfter, age: (s.age || 40) + y, yearsHeld: y, resident: false, reform2026: s.reform2026 }).total;
+      const debt = sch.payment.slice(y * 12, y * 12 + 12).reduce((a, b) => a + b, 0);
+      side = side * (1 + im) - tax - debt;
+      alt *= 1 + im;
+      price *= 1 + s.appreciation;
+      if ((y + 1) % 2 === 0 && y + 1 < s.years) {
+        const market = Math.pow(1 + s.rentGrowth, y + 1);
+        const renewal = s.useRenewalRight !== false && (y + 1) % 4 === 2;
+        index = renewal ? Math.min(market, index * (1 + P.RENT.renewalCap)) : market;
+        const nd = s.deposit * index;
+        side += nd - deposit;
+        deposit = nd;
+      }
+      const bal = sch.balance[Math.min(sch.balance.length - 1, (y + 1) * 12 - 1)] || 0;
+      series.push({ year: y + 1, invest: price - deposit - bal + side, alt });
+    }
+    const sellFee = brokerFee(price, 'sale', s.vat);
+    const cgt = capitalGainsTax({
+      buyPrice: s.price, sellPrice: price, expenses: s.closing + sellFee, yearsHeld: s.years, yearsResided: 0,
+      oneHouse: s.oneHouse, regulatedAtPurchase: r.regulated, homesAtSale: s.homesAfter, regulatedAtSale: r.regulated,
+    });
+    const bal = s.years * 12 <= sch.balance.length ? sch.balance[s.years * 12 - 1] || 0 : 0;
+    const final = price - sellFee - cgt.total - deposit - bal + side;
+    series[series.length - 1].invest = final;
+    return {
+      equity, final, alt, excess: final - alt, cgt, sellFee, salePrice: price, series,
+      cagr: equity > 0 && final > 0 ? Math.pow(final / equity, 1 / s.years) - 1 : null,
     };
   }
 
@@ -637,7 +694,9 @@
     add('emergency', '비상자금', ctx.emergencyMonths >= 6 ? 'good' : ctx.emergencyMonths >= 3 ? 'warning' : 'critical', `매수 후 여유자금 ≈ 생활비 ${ctx.emergencyMonths.toFixed(1)}개월분 (권장 6개월)`);
 
     if (ctx.buyWinProb != null) add('mc', '매수가 임차보다 유리할 확률', ctx.buyWinProb >= 0.6 ? 'good' : ctx.buyWinProb >= 0.4 ? 'warning' : 'critical', pct(ctx.buyWinProb));
-    if (ctx.breakeven == null) add('breakeven', '손익분기 집값상승률', 'critical', '연 25% 상승에도 임차가 유리');
+    if (ctx.gapExcess != null) add('gap', '투자 초과수익 (같은 돈 대안 투자 대비)', ctx.gapExcess > 0 ? 'good' : ctx.gapExcess > -0.05 * ctx.gapEquity ? 'warning' : 'critical', `${ctx.gapExcess >= 0 ? '+' : '−'}${Math.round(Math.abs(ctx.gapExcess) / 1e4).toLocaleString()}만원`);
+    if (ctx.breakeven === undefined) { /* 비거주: 매수 vs 임차 비교 없음 */ }
+    else if (ctx.breakeven == null) add('breakeven', '손익분기 집값상승률', 'critical', '연 25% 상승에도 임차가 유리');
     else add('breakeven', '손익분기 집값상승률', ctx.breakeven <= ctx.expectedAppreciation - 0.01 ? 'good' : ctx.breakeven <= ctx.expectedAppreciation + 0.01 ? 'warning' : 'critical', `연 ${pct(ctx.breakeven)} 이상 올라야 매수가 유리 (가정 ${pct(ctx.expectedAppreciation)})`);
 
     if (ctx.jeonseRatio != null) add('jeonse', '전세가율', ctx.jeonseRatio >= 0.5 ? 'good' : ctx.jeonseRatio >= 0.4 ? 'warning' : 'serious', `${pct(ctx.jeonseRatio)} — ${ctx.jeonseRatio < 0.4 ? '사용가치 대비 기대 프리미엄이 큼' : '사용가치가 가격을 받쳐줌'}`);
@@ -728,6 +787,6 @@
     pmt, pv, schedule, annualDebtService, loanLimit, policyLoanEligibility,
     generalAcqRate, acquisitionTax, brokerFee, leaseBase, bondCost, closingCosts,
     holdingTax, capitalGainsTax, simulate, breakevenAppreciation, monteCarlo,
-    stressTest, verdict, maxAffordablePrice, sensitivity, timingCompare, parseRtmsXml, parseCsv, parseTransactions, comparables, region,
+    stressTest, verdict, gapInvestment, maxAffordablePrice, sensitivity, timingCompare, parseRtmsXml, parseCsv, parseTransactions, comparables, region,
   };
 });

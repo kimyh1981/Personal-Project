@@ -22,15 +22,49 @@
   <div class="layout">
     <form id="inputs" class="panel" autocomplete="off">
       <fieldset>
+        <legend>목적·시기</legend>
+        <label class="f wide">매수 목적
+          <select id="purpose">
+            <option value="거주" selected>거주 (내가 들어가 산다)</option>
+            <option value="거주+투자">거주+투자 (살면서 시세차익도 본다)</option>
+            <option value="투자">투자 (세를 놓는다)</option>
+          </select>
+        </label>
+        <label class="f">매수 예정 시점<input id="purchaseDate" type="month" value="2026-11" data-required></label>
+        <label class="f">입주 희망 시점 <span class="unit">선택</span><input id="moveInBy" type="month"></label>
+        <div class="checks wide">
+          <label><input id="assumeTenant" type="checkbox"> 세입자 승계 (전세 낀 매수)</label>
+        </div>
+      </fieldset>
+
+      <fieldset>
         <legend>매수할 집</legend>
         <label class="f wide">지역
           <select id="regionId"></select>
           <span class="hint" id="regionHint"></span>
         </label>
-        <label class="f">매매가 <span class="unit">만원</span><input id="price" type="number" step="100" value="100000"></label>
-        <label class="f">전용면적 <span class="unit">㎡</span><input id="areaM2" type="number" step="0.1" value="84"></label>
-        <label class="f">같은 단지 전세 시세 <span class="unit">만원</span><input id="jeonsePrice" type="number" step="100" value="60000"></label>
+        <label class="f">주택 유형
+          <select id="propertyType">
+            <option value="아파트" selected>아파트</option>
+            <option value="빌라">빌라 (다세대·연립)</option>
+            <option value="단독주택">단독·다가구</option>
+            <option value="오피스텔">오피스텔 (주거용)</option>
+          </select>
+        </label>
+        <label class="f">매매가 <span class="unit">만원</span><input id="price" type="number" step="100" value="100000" data-required></label>
+        <label class="f">전용면적 <span class="unit">㎡</span><input id="areaM2" type="number" step="0.1" value="84" data-required></label>
+        <label class="f">같은 단지 전세 시세 <span class="unit">만원</span><input id="jeonsePrice" type="number" step="100" value="60000" data-required></label>
         <label class="f">공시가격 / 시세 <span class="unit">%</span><input id="publicRatio" type="number" step="1" value="69"></label>
+        <label class="f wide">같은 평형 최근 실거래가 <span class="unit">만원, 쉼표로 구분 · 비우면 실거래가 탭 데이터 사용</span><input id="recentTrades" type="text" inputmode="numeric" value="98000, 101000, 99500" data-required></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>입지</legend>
+        <label class="f">역까지 도보 <span class="unit">분</span><input id="subwayWalkMin" type="number" step="1" value="7" data-required></label>
+        <label class="f">업무지구 통근 <span class="unit">분</span><input id="jobCommuteMin" type="number" step="1" value="35" data-required></label>
+        <label class="f">초등학교 도보 <span class="unit">분</span><input id="schoolWalkMin" type="number" step="1" value="6" data-required></label>
+        <label class="f wide">호재·편의 <span class="unit">쉼표로 구분</span><input id="amenities" type="text" value="한강공원, 대형마트"></label>
+        <label class="f wide">악재·혐오시설 <span class="unit">쉼표로 구분</span><input id="negatives" type="text" value=""></label>
       </fieldset>
 
       <fieldset>
@@ -44,9 +78,10 @@
             <option value="multi">2주택 이상</option>
           </select>
         </label>
-        <label class="f">부부합산 연소득 <span class="unit">만원</span><input id="annualIncome" type="number" step="100" value="12000"></label>
+        <label class="f">부부합산 연소득 <span class="unit">만원</span><input id="annualIncome" type="number" step="100" value="12000" data-required></label>
         <label class="f">기존 대출 연 원리금 <span class="unit">만원</span><input id="existingDebt" type="number" step="10" value="0"></label>
-        <label class="f">보유 현금 <span class="unit">만원</span><input id="cash" type="number" step="100" value="65000"></label>
+        <label class="f">보유 현금 <span class="unit">만원</span><input id="cash" type="number" step="100" value="65000" data-required></label>
+        <label class="f">연 순저축 <span class="unit">만원</span><input id="annualSavings" type="number" step="100" value="2400"></label>
         <label class="f">월 생활비 <span class="unit">만원</span><input id="monthlyLiving" type="number" step="10" value="300"></label>
         <label class="f">세대주 나이 <span class="unit">세</span><input id="age" type="number" step="1" value="40"></label>
         <div class="checks wide">
@@ -84,6 +119,29 @@
       </fieldset>
 
       <fieldset>
+        <legend>재건축·정비사업</legend>
+        <div class="checks wide">
+          <label><input id="reconTarget" type="checkbox"> 재건축 대상 단지 (이주비 활용 분석)</label>
+        </div>
+        <div id="reconFields" class="subgrid wide" hidden>
+          <label class="f wide">정비사업 단계
+            <select id="reconStage" data-required>
+              <option value="">선택</option>
+              <option>재건축진단</option><option>정비구역지정</option><option>추진위원회승인</option><option>조합설립인가</option>
+              <option>사업시행인가</option><option>관리처분인가</option><option>이주철거</option><option>착공</option><option>준공</option>
+            </select>
+          </label>
+          <label class="f">종전자산 감정가 <span class="unit">만원</span><input id="priorAssetValue" type="number" step="100" placeholder="비우면 매매가 80%" data-required></label>
+          <label class="f">예상 분담금 <span class="unit">만원, 환급은 −</span><input id="expectedContribution" type="number" step="100" data-required></label>
+          <label class="f">신축 예상 시세 <span class="unit">만원</span><input id="newUnitValue" type="number" step="100"></label>
+          <label class="f">이주비 LTV <span class="unit">%</span><input id="relocationLtv" type="number" step="5" value="50"></label>
+          <label class="f">임시거주 보증금 <span class="unit">만원</span><input id="tempHousingDeposit" type="number" step="100" placeholder="비우면 전세 시세"></label>
+          <label class="f">매도인 보유기간 <span class="unit">년</span><input id="ownerHeldYears" type="number" step="1"></label>
+          <label class="f">매도인 거주기간 <span class="unit">년</span><input id="ownerLivedYears" type="number" step="1"></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
         <legend>매수하지 않으면 (임차 대안)</legend>
         <label class="f">보증금 <span class="unit">만원</span><input id="rentDeposit" type="number" step="100" value="60000"></label>
         <label class="f">월세 <span class="unit">만원</span><input id="rentMonthly" type="number" step="5" value="0"></label>
@@ -96,7 +154,7 @@
 
       <fieldset>
         <legend>미래 가정</legend>
-        <label class="f">보유 기간 <span class="unit">년</span><input id="years" type="number" step="1" min="1" max="30" value="10"></label>
+        <label class="f">보유 기간 <span class="unit">년</span><input id="years" type="number" step="1" min="1" max="30" value="10" data-required></label>
         <label class="f">연 집값 상승률 <span class="unit">%</span><input id="appreciation" type="number" step="0.1" value="3"></label>
         <label class="f">집값 변동성 <span class="unit">%</span><input id="appreciationVol" type="number" step="0.5" value="7"></label>
         <label class="f">연 전월세 상승률 <span class="unit">%</span><input id="rentGrowth" type="number" step="0.1" value="3"></label>
@@ -119,16 +177,20 @@
       <section id="kpis" class="kpis"></section>
 
       <nav class="tabs" role="tablist">
-        <button role="tab" data-tab="loan" aria-selected="true">대출 한도</button>
+        <button role="tab" data-tab="conditions" aria-selected="true">조건 점검</button>
+        <button role="tab" data-tab="loan">대출 한도</button>
         <button role="tab" data-tab="cost">세금·부대비용</button>
         <button role="tab" data-tab="compare">매수 vs 임차</button>
         <button role="tab" data-tab="timing">매수 시점</button>
+        <button role="tab" data-tab="recon" id="reconTabBtn" hidden>재건축·이주비</button>
         <button role="tab" data-tab="risk">리스크</button>
         <button role="tab" data-tab="market">실거래가</button>
         <button role="tab" data-tab="candidates">후보 비교</button>
       </nav>
 
-      <section class="tab" id="tab-loan"></section>
+      <section class="tab" id="tab-conditions"></section>
+      <section class="tab" id="tab-loan" hidden></section>
+      <section class="tab" id="tab-recon" hidden></section>
       <section class="tab" id="tab-cost" hidden></section>
       <section class="tab" id="tab-compare" hidden></section>
       <section class="tab" id="tab-timing" hidden></section>
@@ -178,6 +240,7 @@
 <!--BODY-END-->
 <script src="js/policy.js"></script>
 <script src="js/engine.js"></script>
+<script src="js/conditions.js"></script>
 <script src="js/charts.js"></script>
 <script src="js/app.js"></script>
 </body>

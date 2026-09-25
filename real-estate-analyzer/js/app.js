@@ -1,6 +1,6 @@
 /* 화면 제어: 입력 → 엔진 → 결과 렌더링 */
 (function () {
-  const E = window.REA, P = window.REA_POLICY, C = window.REA_CHARTS;
+  const E = window.REA, P = window.REA_POLICY, C = window.REA_CHARTS, COND = window.REA_COND;
   const $ = (id) => document.getElementById(id);
   const MAN = 1e4;
   const STORE_KEY = 'rea-inputs-v1';
@@ -70,10 +70,11 @@
     const opt = (id, scale = 1) => { const v = parseFloat(V[id]); return isFinite(v) ? v * scale : null; };
     return {
       regionId: val('regionId'),
-      price: n('price', MAN), areaM2: n('areaM2'), jeonsePrice: n('jeonsePrice', MAN), publicRatio: n('publicRatio', 0.01),
+      purpose: val('purpose'), propertyType: val('propertyType'), assumeTenant: !!val('assumeTenant'),
+      price: n('price', MAN), areaM2: n('areaM2'), jeonsePrice: opt('jeonsePrice', MAN), publicRatio: n('publicRatio', 0.01),
       buyerType: val('buyerType'),
       annualIncome: n('annualIncome', MAN), existingDebt: n('existingDebt', MAN), cash: n('cash', MAN),
-      monthlyLiving: n('monthlyLiving', MAN), age: n('age'),
+      monthlyLiving: n('monthlyLiving', MAN), age: n('age'), annualSavings: n('annualSavings', MAN),
       newlywed: !!val('newlywed'), newborn: !!val('newborn'), multichild: !!val('multichild'),
       rate: n('rate', 0.01), termYears: Math.max(1, n('termYears')), rateType: val('rateType'), method: val('method'),
       lender: val('lender'), loanWanted: opt('loanWanted', MAN),
@@ -82,6 +83,43 @@
       rentGrowth: n('rentGrowth', 0.01), invReturn: n('invReturn', 0.01), invVol: n('invVol', 0.01),
       maintenanceRate: n('maintenanceRate', 0.01), moveCost: n('moveCost', MAN), bondDiscount: n('bondDiscount', 0.01),
       vat: !!val('vat'), reform2026: !!val('reform2026'), useRenewalRight: !!val('useRenewalRight'), rateChange: n('rateChange', 0.01),
+    };
+  }
+
+  // 필수 조건 입력 (빈 칸은 null → 누락으로 판정)
+  const REQ_INPUT = {
+    purpose: 'purpose', regionId: 'regionId', propertyType: 'propertyType', areaM2: 'areaM2', price: 'price', cash: 'cash',
+    ownedHomes: 'buyerType', annualIncome: 'annualIncome', 'timing.purchaseDate': 'purchaseDate',
+    'location.jobCommuteMin': 'jobCommuteMin', 'location.schoolWalkMin': 'schoolWalkMin', 'location.subwayWalkMin': 'subwayWalkMin',
+    recentTrades: 'recentTrades', jeonse: 'jeonsePrice', 'timing.holdingYears': 'years',
+    'recon.stage': 'reconStage', 'recon.priorAssetValue': 'priorAssetValue', 'recon.expectedContribution': 'expectedContribution',
+  };
+  function readConditions(V = formValues()) {
+    const num = (id, scale = 1) => { const v = parseFloat(V[id]); return isFinite(v) ? v * scale : null; };
+    const list = (id) => String(V[id] || '').split(',').map((x) => x.trim()).filter(Boolean);
+    const owned = { first: 0, nohome: 0, one_dispose: 1, one: 1, multi: 2 }[V.buyerType];
+    let trades = list('recentTrades').map((x) => Number(x.replace(/[^0-9.]/g, '')) * MAN).filter((x) => x > 0);
+    if (!trades.length && txs) {
+      const comp = E.comparables(txs, num('areaM2') || 0, 3);
+      if (comp) trades = comp.points.slice(-5).map((p) => p.t.price);
+    }
+    return {
+      purpose: V.purpose || null, regionId: V.regionId || null, propertyType: V.propertyType || null,
+      areaM2: num('areaM2'), price: num('price', MAN), recentTrades: trades, jeonse: num('jeonsePrice', MAN),
+      assumeTenant: !!V.assumeTenant, cash: num('cash', MAN), ownedHomes: owned ?? null,
+      willSellExisting: V.buyerType === 'one_dispose', annualIncome: num('annualIncome', MAN), annualSavings: num('annualSavings', MAN) || 0,
+      location: {
+        subwayWalkMin: num('subwayWalkMin'), jobCommuteMin: num('jobCommuteMin'), schoolWalkMin: num('schoolWalkMin'),
+        amenities: list('amenities'), negatives: list('negatives'),
+      },
+      recon: {
+        target: !!V.reconTarget, stage: V.reconTarget ? V.reconStage || null : null,
+        priorAssetValue: num('priorAssetValue', MAN), expectedContribution: num('expectedContribution', MAN),
+        newUnitValue: num('newUnitValue', MAN), relocationLtv: num('relocationLtv', 0.01),
+        tempHousingDeposit: num('tempHousingDeposit', MAN), ownerHeldYears: num('ownerHeldYears'), ownerLivedYears: num('ownerLivedYears'),
+      },
+      timing: { purchaseDate: V.purchaseDate || null, holdingYears: num('years'), moveInBy: V.moveInBy || null },
+      loan: { rate: (num('rate') ?? 4) / 100, termYears: num('termYears') || 30, method: V.method },
     };
   }
 
@@ -96,27 +134,31 @@
   }
 
   // ── 계산 ──────────────────────────────────────────────────────────────
-  function compute(i) {
+  function compute(i, cond) {
     const hh = household(i);
     const r = E.region(i.regionId);
+    const livesIn = COND.livesIn(cond);
+    // 비거주(세입자 승계·임대)면 전세보증금을 받아 매수자금에 쓴다. 선순위 임차인이 있으면 주담대는 보수적으로 0
+    const tenantDeposit = !livesIn ? i.jeonsePrice || 0 : 0;
     const limit = E.loanLimit({
       price: i.price, regionId: i.regionId, buyerType: i.buyerType, annualIncome: i.annualIncome,
       existingAnnualDebtService: i.existingDebt, rate: i.rate, termYears: i.termYears,
-      method: i.method, rateType: i.rateType, lender: i.lender,
+      method: i.method, rateType: i.rateType, lender: i.lender, livesIn, propertyType: i.propertyType,
     });
-    const loan = i.loanWanted != null ? Math.max(0, Math.min(i.loanWanted, limit.amount)) : limit.amount;
+    const maxLoan = tenantDeposit ? 0 : limit.amount;
+    const loan = i.loanWanted != null ? Math.max(0, Math.min(i.loanWanted, maxLoan)) : maxLoan;
     const termYears = limit.termYears;
     const publicPrice = i.price * i.publicRatio;
     const closing = E.closingCosts({
       price: i.price, regionId: i.regionId, homesAfter: hh.homesAfter, temporaryTwo: hh.temporaryTwo,
       areaOver85: i.areaM2 > 85, firstTime: i.buyerType === 'first', publicPrice,
-      bondDiscount: i.bondDiscount, vat: i.vat,
+      bondDiscount: i.bondDiscount, vat: i.vat, propertyType: i.propertyType,
     });
-    const holding = E.holdingTax({ publicPrice, oneHouse: hh.oneHouse, homes: hh.homesAfter, age: i.age, yearsHeld: 0, resident: true, reform2026: i.reform2026 });
+    const holding = E.holdingTax({ publicPrice, oneHouse: hh.oneHouse, homes: hh.homesAfter, age: i.age, yearsHeld: 0, resident: livesIn, reform2026: i.reform2026 });
     const monthlyPayment = i.method === 'equalPrincipal'
       ? (E.schedule(loan, i.rate, termYears, 'equalPrincipal').payment[0] || 0)
       : E.pmt(loan, i.rate, termYears * 12);
-    const need = i.price - loan + closing.total + i.moveCost;
+    const need = i.price - loan - tenantDeposit + closing.total + (livesIn ? i.moveCost : 0);
     const fundingGap = need - i.cash;
     const leftover = i.cash - need;
     const monthlyIncome = i.annualIncome / 12;
@@ -130,8 +172,13 @@
       rentGrowth: i.rentGrowth, useRenewalRight: i.useRenewalRight, moveCost: i.moveCost, oneHouse: hh.oneHouse, age: i.age, reform2026: i.reform2026, vat: i.vat,
     };
     const base = E.simulate(sim);
-    const breakeven = E.breakevenAppreciation(sim);
-    const mc = E.monteCarlo(sim, { runs: 800, seed: 20260925, appreciationVol: i.appreciationVol, invVol: i.invVol });
+    const breakeven = livesIn ? E.breakevenAppreciation(sim) : undefined;
+    const mc = livesIn ? E.monteCarlo(sim, { runs: 800, seed: 20260925, appreciationVol: i.appreciationVol, invVol: i.invVol }) : null;
+    const gap = livesIn ? null : E.gapInvestment({
+      price: i.price, deposit: tenantDeposit, loan, rate: i.rate, termYears, method: i.method, closing: closing.total,
+      years: i.years, appreciation: i.appreciation, rentGrowth: i.rentGrowth, useRenewalRight: i.useRenewalRight, invReturn: i.invReturn,
+      regionId: i.regionId, homesAfter: hh.homesAfter, oneHouse: hh.oneHouse, publicRatio: i.publicRatio, age: i.age, reform2026: i.reform2026, vat: i.vat,
+    });
     const policyLoans = E.policyLoanEligibility({
       price: i.price, householdIncome: i.annualIncome, netAsset: i.cash, areaM2: i.areaM2, buyerType: i.buyerType,
       newlywed: i.newlywed, newborn: i.newborn, multichild: i.multichild,
@@ -139,20 +186,29 @@
     const afford = E.maxAffordablePrice({
       regionId: i.regionId, buyerType: i.buyerType, annualIncome: i.annualIncome, existingAnnualDebtService: i.existingDebt,
       rate: i.rate, termYears: i.termYears, method: i.method, rateType: i.rateType, lender: i.lender,
-      cash: i.cash, moveCost: i.moveCost, homesAfter: hh.homesAfter, temporaryTwo: hh.temporaryTwo,
+      cash: i.cash, moveCost: i.moveCost, homesAfter: hh.homesAfter, temporaryTwo: hh.temporaryTwo, livesIn, propertyType: i.propertyType,
       areaOver85: i.areaM2 > 85, publicRatio: i.publicRatio, bondDiscount: i.bondDiscount, vat: i.vat,
     });
-    const sens = base.feasible ? E.sensitivity(sim) : null;
+    const sens = livesIn && base.feasible ? E.sensitivity(sim) : null;
     const jeonseRatio = i.jeonsePrice > 0 ? i.jeonsePrice / i.price : null;
+    const assess = COND.assess(cond, {
+      price: i.price, loanUsed: loan, tenantDeposit, requiredCash: need, surplus: i.cash - need,
+      totalCost: i.price + closing.total, dsr: i.annualIncome > 0 ? (monthlyPayment * 12 + i.existingDebt) / i.annualIncome : 0,
+      loanBlockedReason: limit.blockedReason, taxHeavy: closing.tax.heavy, taxRate: closing.tax.rate, homesAfter: hh.homesAfter,
+    });
     const v = E.verdict({
       fundingGap, burden: monthlyIncome > 0 ? monthlyPayment / monthlyIncome : Infinity,
       stressBurden: stress.rateShocks[2].burden,
-      buyWinProb: base.feasible ? mc.buyWinProb : null,
+      buyWinProb: livesIn && base.feasible ? mc.buyWinProb : null,
       breakeven, expectedAppreciation: i.appreciation,
       emergencyMonths: i.monthlyLiving > 0 ? Math.max(0, leftover) / i.monthlyLiving : 99,
       jeonseRatio, pir: i.annualIncome > 0 ? i.price / i.annualIncome : null,
+      gapExcess: gap ? gap.excess : null, gapEquity: gap ? gap.equity : null,
     });
-    return { i, hh, r, afford, sens, limit, loan, termYears, publicPrice, closing, holding, monthlyPayment, need, fundingGap, leftover, stress, sim, base, breakeven, mc, policyLoans, jeonseRatio, v };
+    // 필수 조건 점검의 차단 항목은 점수와 무관하게 매수 불가
+    if (assess.verdict === '불가') { v.label = '매수 불가 — 조건 차단'; v.tone = 'critical'; }
+    else if (v.tone === 'good' && assess.flags.some((f) => f.level === 'warn' && f.category !== '규제')) { v.label = '조건부 검토'; v.tone = 'warning'; }
+    return { i, hh, r, cond, livesIn, tenantDeposit, gap, assess, afford, sens, limit, loan, termYears, publicPrice, closing, holding, monthlyPayment, need, fundingGap, leftover, stress, sim, base, breakeven, mc, policyLoans, jeonseRatio, v };
   }
 
   // ── 렌더 ──────────────────────────────────────────────────────────────
@@ -164,9 +220,135 @@
       <div class="score" aria-label="종합 점수 ${v.score}점"><b>${v.score}</b><span>/ 100</span></div>
       <div>
         <h2>${esc(v.label)}</h2>
-        <p class="sub">${esc(c.r.name)} · ${esc(won(c.i.price))} · 전용 ${c.i.areaM2}㎡ · ${c.i.years}년 거주 가정</p>
+        <p class="sub">${esc(c.i.purpose)} · ${esc(c.r.name)} ${esc(c.i.propertyType)} · ${esc(won(c.i.price))} · 전용 ${c.i.areaM2}㎡ · ${c.i.years}년 ${c.livesIn ? '거주' : '보유'} 가정</p>
         <ul class="checklist">${v.checks.map((k) => `<li>${chip(k.status)}<span>${esc(k.label)}</span><span class="d">${esc(k.detail)}</span></li>`).join('')}</ul>
+        ${verdictExtras(c.assess)}
       </div>`;
+  }
+  const FLAG = { block: ['critical', '차단'], warn: ['warning', '주의'], info: ['neutral', '정보'] };
+  function verdictExtras(a) {
+    const scores = Object.entries(a.scores).map(([k, sc]) => `<span>${k} 점수 <b>${sc.score}</b>/100</span>`).join('');
+    const hard = a.flags.filter((f) => f.level !== 'info');
+    const list = hard.length ? `<ul class="flags" style="margin-top:12px">${hard.map((f) => `<li>${chip(FLAG[f.level][0], FLAG[f.level][1])}<span class="cat">${esc(f.category)}</span><span class="msg">${esc(f.message)}</span></li>`).join('')}</ul>` : '';
+    return (scores ? `<div class="scores">${scores}<span>조건 점검 ${a.flags.filter((f) => f.level === 'block').length}건 차단 · ${a.flags.filter((f) => f.level === 'warn').length}건 주의</span></div>` : '') + list;
+  }
+
+  // ── 조건 점검 ─────────────────────────────────────────────────────────
+  function checklistCard(list) {
+    const order = ['목적', '지역', '입지', '주택유형', '확보자금', '매매단가', '필요자금', '재건축', '시기'];
+    const rows = list.slice().sort((a, b) => order.indexOf(a.category) - order.indexOf(b.category))
+      .map((r) => `<tr><td>${esc(r.category)}</td><td>${esc(r.label)}</td><td>${esc(r.scope)}</td><td>${r.done ? chip('good', '입력됨') : chip('critical', '누락')}</td><td class="muted">${esc(r.why)}</td></tr>`).join('');
+    const done = list.filter((r) => r.done).length;
+    return `<div class="card">
+      <h3>필수 조건 ${done} / ${list.length}</h3>
+      <p class="muted">목적과 상황(재건축·세입자 승계)에 따라 필요한 항목이 달라집니다. 하나라도 비면 판정하지 않습니다.</p>
+      <div class="tbl-wrap"><table><thead><tr><th>분류</th><th>항목</th><th>적용</th><th>상태</th><th>필요한 이유</th></tr></thead><tbody>${rows}</tbody></table></div>
+    </div>`;
+  }
+  function renderConditions(c) {
+    const a = c.assess, u = a.unit;
+    const flags = a.flags.length
+      ? `<ul class="flags">${a.flags.map((f) => `<li>${chip(FLAG[f.level][0], FLAG[f.level][1])}<span class="cat">${esc(f.category)}</span><span class="msg">${esc(f.message)}</span></li>`).join('')}</ul>`
+      : '<p class="muted">걸리는 규제·조건이 없습니다.</p>';
+    const scoreCard = Object.entries(a.scores).map(([k, sc]) => `
+      <div class="card">
+        <h3>${k} 점수 ${sc.score} / 100</h3>
+        <div class="tbl-wrap"><table><tbody>
+          ${Object.entries(sc.parts).map(([p, v]) => `<tr><td>${esc(p)}</td><td class="n">${v}</td></tr>`).join('')}
+          <tr><td>호재·악재·유형 보정</td><td class="n">${sc.adj >= 0 ? '+' : ''}${sc.adj}</td></tr>
+        </tbody></table></div>
+      </div>`).join('');
+    const t = a.timing;
+    $('tab-conditions').innerHTML = `
+      <div class="card">
+        <h3>규제·조건 판정: ${esc({ 불가: '불가', 조건부: '조건부 진행', 진행가능: '진행 가능' }[a.verdict])}</h3>
+        <p class="muted">${esc(a.region.name)} · ${a.region.regulated ? '규제지역' : '비규제'} · ${a.region.capital ? '수도권' : '지방'} · ${a.region.landPermit ? '토지거래허가 대상' : '토지거래허가 비대상'} · ${esc(c.i.propertyType)} · ${c.livesIn ? '실거주' : '비거주(임대)'}</p>
+        ${flags}
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <h3>매매단가</h3>
+          <div class="tbl-wrap"><table><tbody>
+            <tr><td>전용 ㎡당</td><td class="n">${esc(won(u.perM2))}</td></tr>
+            <tr><td>전용 평당 (3.3058㎡)</td><td class="n">${esc(won(u.perPyeong))}</td></tr>
+            ${u.recentAvg != null ? `<tr><td>최근 실거래 평균 (${c.cond.recentTrades.length}건)</td><td class="n">${esc(won(u.recentAvg))}</td></tr><tr class="hl"><td>실거래 평균 대비</td><td class="n">${u.premium >= 0 ? '+' : ''}${pct(u.premium)}</td></tr>` : ''}
+            ${u.jeonseRatio != null ? `<tr><td>전세가율</td><td class="n">${pct(u.jeonseRatio)}</td></tr><tr><td>갭 (매매 − 전세)</td><td class="n">${esc(won(u.gap))}</td></tr>` : ''}
+          </tbody></table></div>
+          <p class="muted" style="font-size:12px">평당가는 전용면적 기준입니다. 광고의 공급면적 평당가보다 높게 나옵니다.</p>
+        </div>
+        <div class="card">
+          <h3>필요자금</h3>
+          <div class="tbl-wrap"><table><tbody>
+            <tr><td>매매가</td><td class="n">${esc(won(c.i.price))}</td></tr>
+            <tr><td>취득 부대비용</td><td class="n">${esc(won(c.closing.total))}</td></tr>
+            ${c.livesIn ? `<tr><td>이사비</td><td class="n">${esc(won(c.i.moveCost))}</td></tr>` : ''}
+            <tr><td>− 주택담보대출</td><td class="n">${esc(won(-c.loan))}</td></tr>
+            ${c.tenantDeposit ? `<tr><td>− 전세보증금 (세입자)</td><td class="n">${esc(won(-c.tenantDeposit))}</td></tr>` : ''}
+            <tr class="total"><td>필요 자기자금</td><td class="n">${esc(won(c.need))}</td></tr>
+            <tr><td>확보 자금</td><td class="n">${esc(won(c.i.cash))}</td></tr>
+            <tr class="hl"><td>${c.fundingGap > 0 ? '부족' : '여유'}</td><td class="n ${c.fundingGap > 0 ? 'neg' : 'pos'}">${esc(won(Math.abs(c.fundingGap)))}</td></tr>
+          </tbody></table></div>
+        </div>
+        ${scoreCard}
+        <div class="card">
+          <h3>시기</h3>
+          ${t.events.length ? `<ul class="timeline">${t.events.map((e) => `<li><span class="date">${esc(e.date)}</span><span>${esc(e.label)}</span></li>`).join('')}</ul>` : '<p class="muted">매수 예정 시점을 입력하세요.</p>'}
+        </div>
+      </div>
+      ${checklistCard(a.checklist)}`;
+  }
+
+  // ── 재건축·이주비 ─────────────────────────────────────────────────────
+  function renderRecon(c) {
+    const r = c.assess.recon;
+    $('reconTabBtn').hidden = !r;
+    if (!r) { $('tab-recon').innerHTML = ''; return; }
+    const reloc = c.tenantDeposit ? '세입자 보증금 반환' : c.livesIn ? '공사기간 임시거주 보증금' : '—';
+    $('tab-recon').innerHTML = `
+      <div class="grid2">
+        <div class="card">
+          <h3>${esc(r.stage)} 단계 · 신축 입주까지 약 ${r.yearsToMoveIn}년</h3>
+          <p class="muted">이주 시점: ${esc(r.relocationTiming)}</p>
+          <p>${r.transferBlocked ? chip('critical', '조합원 지위 승계 불가') : chip('good', '조합원 지위 승계 가능')}</p>
+          ${r.expectedGain != null ? `<p class="big ${r.expectedGain >= 0 ? 'pos' : 'neg'}">${esc(won(r.expectedGain, { sign: true }))}</p><p class="muted">예상 차익 = 신축 시세 − (매수 총비용 + 분담금 + 입주까지 이자)</p>` : '<p class="muted">신축 예상 시세를 넣으면 예상 차익을 계산합니다.</p>'}
+        </div>
+        <div class="card">
+          <h3>이주비로 돈이 도는 순서</h3>
+          <div class="tbl-wrap"><table><tbody>
+            <tr><td>종전자산 감정가 × 이주비 LTV ${pct(r.relocationLtv, 0)}</td><td class="n">${esc(won(r.relocationBase))}</td></tr>
+            <tr><td>이주비 대출</td><td class="n">${esc(won(r.relocationLoan))}</td></tr>
+            <tr><td>− 이주 시점 주담대 잔액 (대환)</td><td class="n">${esc(won(-r.balanceAtRelocation))}</td></tr>
+            <tr class="hl"><td>이주비 순수령</td><td class="n">${esc(won(r.netRelocation))}</td></tr>
+            <tr><td>${reloc}</td><td class="n">${esc(won(c.tenantDeposit || r.tempDeposit || 0))}</td></tr>
+            <tr class="total"><td>이주 때 필요한 자기자금</td><td class="n">${esc(won(Math.max(0, r.cashAtRelocation)))}</td></tr>
+            <tr><td>그때까지 확보 예상 (매수 후 여유 + 연 저축)</td><td class="n">${esc(won(r.fundsAtRelocation))}</td></tr>
+            <tr><td>입주 때 분담금</td><td class="n">${esc(won(r.contribution))}</td></tr>
+            <tr><td>입주 때 확보 예상</td><td class="n">${esc(won(Math.max(0, r.fundsAtMoveIn)))}</td></tr>
+            <tr class="total"><td>총 투입 자기자금 (매수 + 이주 + 입주)</td><td class="n">${esc(won(r.totalCashCommitted))}</td></tr>
+            <tr><td>입주까지 대출 이자</td><td class="n">${esc(won(r.interest))}</td></tr>
+          </tbody></table></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>확인할 것</h3>
+        <ul class="plain">${r.blockers.concat(r.warnings, r.notes).map((n) => `<li>${esc(n)}</li>`).join('')}</ul>
+      </div>`;
+  }
+
+  // 필수 조건이 비었을 때
+  function renderMissing(list, errors) {
+    const el = $('verdict');
+    el.dataset.tone = 'warning';
+    const miss = list.filter((r) => !r.done);
+    el.innerHTML = `<div class="score" aria-label="판정 보류"><b>—</b><span>보류</span></div>
+      <div>
+        <h2>입력 보완 필요</h2>
+        <p class="sub">필수 조건 ${miss.length}개가 비어 있어 판정하지 않았습니다.</p>
+        <ul class="flags">${miss.map((r) => `<li>${chip('critical', '누락')}<span class="cat">${esc(r.category)}</span><span class="msg">${esc(r.label)} — ${esc(r.why)}</span></li>`).join('')}${errors.map((e) => `<li>${chip('critical', '오류')}<span class="cat">입력</span><span class="msg">${esc(e)}</span></li>`).join('')}</ul>
+      </div>`;
+    $('kpis').innerHTML = '';
+    $('tab-conditions').innerHTML = checklistCard(list);
+    for (const id of ['loan', 'cost', 'compare', 'timing', 'risk', 'recon']) $('tab-' + id).innerHTML = '<div class="card"><p class="muted">필수 조건을 먼저 채우면 계산합니다. "조건 점검" 탭에서 빠진 항목을 확인하세요.</p></div>';
   }
 
   function renderKpis(c) {
@@ -256,7 +438,47 @@
       </div>`;
   }
 
+  function renderGap(c) {
+    const g = c.gap;
+    $('tab-compare').innerHTML = `
+      <div class="card">
+        <h3>비거주 투자 — 같은 돈을 연 ${pct(c.i.invReturn)}로 굴렸을 때와 비교</h3>
+        <p class="muted">자기자본 ${esc(won(g.equity))} (매매가 − 전세보증금${c.loan ? ' − 대출' : ''} + 부대비용). 보증금 증액분은 받아서 굴리고, 보유세·이자는 매년 냅니다. 마지막 해는 매도 비용·양도세·보증금 반환까지 뺀 값입니다.</p>
+        <div class="legend"><span><i style="--c:var(--s-buy)"></i>매수 투자</span><span><i style="--c:var(--s-rent)"></i>대안 투자</span></div>
+        <div id="nwChart"></div>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <h3>${c.i.years}년 뒤 대안 대비 초과수익</h3>
+          <p class="big ${g.excess >= 0 ? 'pos' : 'neg'}">${esc(won(g.excess, { sign: true }))}</p>
+          <div class="tbl-wrap"><table><tbody>
+            <tr><td>매수 투자 최종</td><td class="n">${esc(won(g.final))}</td></tr>
+            <tr><td>대안 투자 최종</td><td class="n">${esc(won(g.alt))}</td></tr>
+            <tr><td>연평균 수익률 (자기자본 기준)</td><td class="n">${g.cagr == null ? '—' : pct(g.cagr, 2)}</td></tr>
+            <tr><td>예상 매도가</td><td class="n">${esc(won(g.salePrice))}</td></tr>
+            <tr><td>양도세 (비거주${g.cgt.note ? ' · ' + esc(g.cgt.note) : ''})</td><td class="n">${esc(won(g.cgt.total))}</td></tr>
+          </tbody></table></div>
+        </div>
+        <div class="card">
+          <h3>비거주 매수에서 달라지는 점</h3>
+          <ul class="plain">
+            <li>수도권·규제지역은 주담대 6개월 전입의무 때문에 대출 없이 전세보증금으로 잔금을 치러야 합니다.</li>
+            <li>규제지역에서 취득한 집은 2년을 살아야 1세대1주택 비과세를 받습니다. 비거주면 양도세가 과세됩니다.</li>
+            <li>역전세(보증금 하락) 때는 차액을 돌려줘야 하므로 여유자금이 필요합니다.</li>
+          </ul>
+        </div>
+      </div>`;
+    C.line($('nwChart'), {
+      series: [
+        { name: '매수 투자', color: '--s-buy', values: g.series.map((p) => ({ x: p.year, y: p.invest })) },
+        { name: '대안 투자', color: '--s-rent', values: g.series.map((p) => ({ x: p.year, y: p.alt })) },
+      ],
+      xFmt: (x) => `${x}년`, yFmt: (v, full) => (full ? won(v) : won(v, { short: true })), ariaLabel: '매수 투자와 대안 투자의 연도별 자산',
+    });
+  }
+
   function renderCompare(c) {
+    if (!c.livesIn) { renderGap(c); return; }
     const b = c.base, mc = c.mc;
     const tab = $('tab-compare');
     if (!b.feasible) {
@@ -435,6 +657,10 @@
   // ── 매수 시점 ─────────────────────────────────────────────────────────
   function renderTiming(c) {
     const tab = $('tab-timing');
+    if (!c.livesIn) {
+      tab.innerHTML = '<div class="card"><h3>실거주 매수에서만 비교합니다</h3><p class="muted">매수 시점 비교는 기다리는 동안 임차하는 실거주 가구를 가정합니다. 목적을 거주 또는 거주+투자로 바꾸고 세입자 승계를 끄세요.</p></div>';
+      return;
+    }
     if (!c.base.feasible) {
       tab.innerHTML = '<div class="card"><h3>지금 매수 조건이 성립하지 않습니다</h3><p class="muted">자금 조달이 가능해야 시점을 비교할 수 있습니다.</p></div>';
       return;
@@ -561,7 +787,11 @@
   function renderCandidates() {
     const out = $('candOut');
     if (!candidates.length) { out.innerHTML = '<div class="card"><p class="muted">저장된 후보가 없습니다. 조건을 입력하고 "현재 조건을 후보로 저장"을 누르세요.</p></div>'; return; }
-    const res = candidates.map((cd) => ({ cd, r: compute(read(cd.values)) }));
+    const res = candidates.map((cd) => {
+      const cond = readConditions(cd.values);
+      return { cd, r: COND.missing(cond).length || COND.valueErrors(cond).length ? null : compute(read(cd.values), cond) };
+    }).filter((x) => x.r);
+    if (!res.length) { out.innerHTML = '<div class="card"><p class="muted">저장된 후보에 빠진 필수 조건이 있어 비교할 수 없습니다. 불러와서 채운 뒤 다시 저장하세요.</p></div>'; return; }
     const metrics = [
       ['종합 점수', (r) => r.v.score, (x) => `${x}점`, 'high'],
       ['매매가', (r) => r.i.price, won, null],
@@ -600,16 +830,20 @@
   // ── 흐름 ──────────────────────────────────────────────────────────────
   let timer = null;
   function update() {
-    const i = read();
+    const V = formValues();
+    const i = read(V);
+    const cond = readConditions(V);
     const r = E.region(i.regionId);
-    $('regionHint').textContent = [r.regulated ? '규제지역' : '비규제', r.capital ? '수도권' : '지방', r.landPermit ? '토지거래허가구역' : null].filter(Boolean).join(' · ');
-    if (!(i.price > 0)) {
-      $('verdict').dataset.tone = 'warning';
-      $('verdict').innerHTML = '<div></div><div><h2>매매가를 입력하세요</h2><p class="sub">매매가가 0보다 커야 계산할 수 있습니다.</p></div>';
-      return;
-    }
-    const c = compute(i);
-    renderVerdict(c); renderKpis(c); renderLoan(c); renderCost(c); renderCompare(c); renderTiming(c); renderRisk(c); renderMarket(c);
+    const permit = r.landPermit && P.PROPERTY.landPermitTypes.includes(i.propertyType);
+    $('regionHint').textContent = [r.regulated ? '규제지역' : '비규제', r.capital ? '수도권' : '지방', permit ? '토지거래허가구역' : null].filter(Boolean).join(' · ');
+    $('reconFields').hidden = !V.reconTarget;
+    const list = COND.checklist(cond);
+    const errors = COND.valueErrors(cond);
+    const missingIds = new Set(list.filter((x) => !x.done).map((x) => REQ_INPUT[x.path]));
+    form.querySelectorAll('input, select').forEach((e) => e.classList.toggle('missing', missingIds.has(e.id)));
+    if (missingIds.size || errors.length) { renderMissing(list, errors); persist(); return; }
+    const c = compute(i, cond);
+    renderVerdict(c); renderKpis(c); renderConditions(c); renderRecon(c); renderLoan(c); renderCost(c); renderCompare(c); renderTiming(c); renderRisk(c); renderMarket(c);
     if (!lawdTouched) $('apiLawd').value = r.lawd || '';
     persist();
   }
@@ -665,9 +899,11 @@
     if (del) { candidates = candidates.filter((x) => String(x.id) !== del.dataset.del); persistCands(); renderCandidates(); }
   });
   initApi();
-  let tab = 'loan';
-  try { tab = localStorage.getItem('rea-tab') || location.hash.slice(1) || 'loan'; } catch (_) { /* 무시 */ }
-  if (!document.getElementById('tab-' + tab)) tab = 'loan';
+  // 주택 유형에 맞춰 공시가격 비율 기본값을 바꾼다 (단독주택은 현실화율이 낮다)
+  $('propertyType').addEventListener('change', () => { $('publicRatio').value = P.PROPERTY.publicRatio[$('propertyType').value] ?? 69; });
+  let tab = 'conditions';
+  try { tab = location.hash.slice(1) || localStorage.getItem('rea-tab') || 'conditions'; } catch (_) { /* 무시 */ }
+  if (!document.getElementById('tab-' + tab)) tab = 'conditions';
   selectTab(tab);
   update();
 })();

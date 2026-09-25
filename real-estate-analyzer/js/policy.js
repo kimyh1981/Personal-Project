@@ -168,6 +168,28 @@
     localIncomeRate: 0.1,
   };
 
+  // ── 주택 유형 ─────────────────────────────────────────────────────────
+  const PROPERTY_TYPES = ['아파트', '빌라', '단독주택', '오피스텔'];
+  const PROPERTY = {
+    landPermitTypes: ['아파트'], // 토지거래허가(실거주 의무)는 아파트에만 적용
+    officetel: { acqRate: 0.04, eduRate: 0.004, ruralRate: 0.002 }, // 주택 수와 무관하게 4.6%
+    liquidity: { 아파트: 80, 오피스텔: 45, 빌라: 35, 단독주택: 40 }, // 환금성 점수
+    publicRatio: { 아파트: 69, 빌라: 69, 단독주택: 53, 오피스텔: 69 }, // 공시가격/시세 기본값(%)
+  };
+
+  // ── 재건축·정비사업 ───────────────────────────────────────────────────
+  const RECON = {
+    stages: ['해당없음', '재건축진단', '정비구역지정', '추진위원회승인', '조합설립인가', '사업시행인가', '관리처분인가', '이주철거', '착공', '준공'],
+    yearsToMoveIn: { 재건축진단: 12, 정비구역지정: 10, 추진위원회승인: 9, 조합설립인가: 8, 사업시행인가: 6, 관리처분인가: 4.5, 이주철거: 4, 착공: 3, 준공: 0 },
+    constructionYears: 4, // 이주 시점부터 신축 입주까지
+    relocationLtv: 0.5, // 이주비 대출 LTV (종전자산 감정가 기준)
+    priorAssetDefaultRatio: 0.8, // 감정가 미입력 시 매매가 대비
+    transferRestrictionStage: '조합설립인가', // 투기과열지구: 이후 조합원 지위양도 제한
+    transferException: { heldYears: 10, livedYears: 5 },
+    relocationNote: '이주비 대출은 종전자산 감정가 기준 LTV가 적용됩니다. 수도권·규제지역 주담대 한도(6억 등)와 다주택자 대출 제한이 이주비에도 적용되는지 조합·주관 은행에 반드시 확인하세요.',
+    excessProfitNote: '재건축초과이익환수(조합원 1인당 초과이익 8천만원 초과분 부과) 대상인지 확인하세요.',
+  };
+
   // ── 임차 ──────────────────────────────────────────────────────────────
   const RENT = {
     renewalCap: 0.05, // 계약갱신청구권 사용 시 인상 상한
@@ -177,7 +199,7 @@
 
   return {
     asOf: '2026-09-25', EOK, MAN,
-    REGIONS, LOAN, POLICY_LOANS, ACQUISITION, BROKER, HOLDING, TRANSFER, RENT,
+    REGIONS, LOAN, POLICY_LOANS, PROPERTY_TYPES, PROPERTY, RECON, ACQUISITION, BROKER, HOLDING, TRANSFER, RENT,
     notes: [
       '2026-08-03 세제개편안(종부세 거주 1주택 공제 14억 등)은 국회 통과 전이며 대부분 2027년 이후 시행 예정입니다.',
       '스트레스 DSR 반영비율·정책대출 요건은 은행·상품별로 다를 수 있습니다.',
