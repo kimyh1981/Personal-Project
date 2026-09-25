@@ -8,7 +8,7 @@ const fragment = process.argv.includes('--fragment');
 
 const html = read('index.html');
 const css = read('css/style.css');
-const scripts = ['js/policy.js', 'js/engine.js', 'js/conditions.js', 'js/charts.js', 'js/app.js'].map(read);
+const scripts = ['js/policy.js', 'js/engine.js', 'js/conditions.js', 'js/charts.js', 'js/app.js', 'js/pwa.js'].map(read);
 const body = html.slice(html.indexOf('<!--BODY-START-->') + 17, html.indexOf('<!--BODY-END-->'));
 const fonts = html.match(/<link rel="stylesheet" href="https:\/\/fonts[^>]+>/)[0];
 const title = html.match(/<title>[^<]+<\/title>/)[0];

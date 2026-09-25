@@ -1004,9 +1004,12 @@
     const errors = COND.valueErrors(cond);
     const missingIds = new Set(list.filter((x) => !x.done).map((x) => REQ_INPUT[x.path]));
     form.querySelectorAll('input, select').forEach((e) => e.classList.toggle('missing', missingIds.has(e.id)));
-    if (missingIds.size || errors.length) { renderMissing(list, errors); persist(); return; }
+    if (missingIds.size || errors.length) { renderMissing(list, errors); window.REA_LAST = { score: null, label: `입력 보완 필요 (${missingIds.size}개)`, tone: 'warning' };
+      document.dispatchEvent(new CustomEvent('rea:updated', { detail: window.REA_LAST })); persist(); return; }
     const c = compute(i, cond);
-    renderVerdict(c); renderKpis(c); renderConditions(c); renderRecon(c); renderLoan(c); renderCost(c); renderCompare(c); renderTiming(c); renderRisk(c); renderMarket(c);
+    renderVerdict(c); renderKpis(c);
+    window.REA_LAST = { score: c.v.score, label: c.v.label, tone: c.v.tone };
+    document.dispatchEvent(new CustomEvent('rea:updated', { detail: window.REA_LAST })); renderConditions(c); renderRecon(c); renderLoan(c); renderCost(c); renderCompare(c); renderTiming(c); renderRisk(c); renderMarket(c);
     if (!lawdTouched) $('apiLawd').value = r.lawd || '';
     persist();
   }

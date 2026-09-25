@@ -3,7 +3,13 @@
   const NS = 'http://www.w3.org/2000/svg';
   let W = 640, H = 280;
   const M = { t: 16, r: 84, b: 32, l: 64 };
-  const size = (o, w, h, r) => { W = o.width || w; H = o.height || h; M.r = r ?? 84; };
+  // 휴대폰 폭에서는 좌표계를 줄여 글자가 작아지지 않게 한다
+  const narrow = () => typeof innerWidth !== 'undefined' && innerWidth < 600;
+  const size = (o, w, h, r) => {
+    W = o.width || (narrow() ? Math.min(w, 360) : w);
+    H = o.height || (narrow() ? Math.round(h * 0.95) : h);
+    M.r = narrow() ? Math.min(r ?? 84, 56) : r ?? 84;
+  };
 
   function el(tag, attrs, parent) {
     const e = document.createElementNS(NS, tag);

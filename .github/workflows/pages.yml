@@ -1,0 +1,43 @@
+# 실거주 매수 판단기를 GitHub Pages에 배포한다 (휴대폰 앱 설치용 HTTPS 주소)
+name: Deploy analyzer to GitHub Pages
+
+on:
+  push:
+    branches: [master]
+    paths: ['real-estate-analyzer/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test
+        working-directory: real-estate-analyzer
+        run: npm test
+      - name: Collect site files
+        run: |
+          mkdir -p _site
+          cd real-estate-analyzer
+          cp -r index.html manifest.webmanifest sw.js css js icons ../_site/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

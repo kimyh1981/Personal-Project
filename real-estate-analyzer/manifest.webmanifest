@@ -1,0 +1,24 @@
+{
+  "name": "실거주 매수 판단기",
+  "short_name": "매수판단",
+  "description": "한국 주택 거주·투자 매수 판단: 대출 규제, 세금, 재건축 이주비, 매수 vs 임차 비교",
+  "lang": "ko",
+  "id": "./",
+  "start_url": "./?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#f3f5f3",
+  "theme_color": "#1f6f5c",
+  "categories": ["finance", "productivity"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "조건 입력", "url": "./?view=inputs", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "후보 비교", "url": "./?view=results#candidates", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}
