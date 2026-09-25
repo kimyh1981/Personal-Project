@@ -113,10 +113,14 @@
       dsrAmount = lo;
     } else dsrAmount = pv(room / 12, dsrRate, termYears * 12);
 
+    // 총 대출 1억원 이하는 DSR 적용 제외
+    const dsrExempt = !(i.existingAnnualDebtService > 0) && Math.min(ltvAmount, cap) <= 1 * EOK;
+    if (dsrExempt) dsrAmount = Infinity;
+
     const candidates = [
       { key: 'ltv', label: `LTV ${Math.round(ltv * 100)}%`, amount: ltvAmount },
       { key: 'cap', label: '주담대 절대한도', amount: cap },
-      { key: 'dsr', label: `DSR ${Math.round(dsrLimit * 100)}% (스트레스 +${(stress * 100).toFixed(2)}%p)`, amount: dsrAmount },
+      { key: 'dsr', label: dsrExempt ? 'DSR (1억 이하 미적용)' : `DSR ${Math.round(dsrLimit * 100)}% (스트레스 +${(stress * 100).toFixed(2)}%p)`, amount: dsrAmount },
     ];
     const binding = candidates.reduce((a, b) => (b.amount < a.amount ? b : a));
     const amount = Math.max(0, Math.floor(binding.amount / 1e6) * 1e6); // 100만원 단위 절사
@@ -165,8 +169,8 @@
     const { generalLow, generalHigh } = P.ACQUISITION;
     if (price <= generalLow.upTo) return generalLow.rate;
     if (price > generalHigh.from) return generalHigh.rate;
-    // 6억~9억: (취득가액 × 2/3억 − 3) %, 소수점 5자리 반올림
-    return Math.round(((price / EOK) * (2 / 3) - 3) * 1e5) / 1e7;
+    // 6억~9억: (취득가액 × 2/3억 − 3) %, 세율을 소수점 다섯째 자리에서 반올림 (7억 → 1.67%)
+    return Math.round(((price / EOK) * (2 / 3) - 3) * 100) / 1e4;
   }
 
   /**
@@ -197,13 +201,21 @@
     };
   }
 
+  // 중개보수 구간은 'N 미만' 기준이므로 경계값에서 상위 요율을 적용한다
   function brokerFee(price, kind, vat) {
-    const row = lookup(P.BROKER[kind], price);
+    const table = P.BROKER[kind];
+    const row = table.find((r) => price < r[0]) || table[table.length - 1];
     const fee = Math.min(price * row[1], row[2] ?? Infinity);
     return Math.round(fee * (vat ? 1.1 : 1));
   }
 
   // 국민주택채권 즉시매도 손실 (시가표준액 × 매입률 × 할인율)
+  // 월세가 있는 임대차의 환산보증금: 보증금 + 월세×100, 5천만원 미만이면 월세×70
+  function leaseBase(deposit, monthly) {
+    const v = deposit + monthly * 100;
+    return v < 5000 * 1e4 ? deposit + monthly * 70 : v;
+  }
+
   function bondCost(publicPrice, regionId, discountRate) {
     const r = region(regionId);
     const rate = lookup(P.ACQUISITION.bond[r.metro ? 'metro' : 'other'], publicPrice)[1];
@@ -319,9 +331,10 @@
     const taxBase = Math.max(0, taxable - ltDeduction - T.basicDeduction);
 
     let tax;
-    if (i.yearsHeld < 1) tax = taxBase * T.shortTerm.under1;
-    else if (i.yearsHeld < 2) tax = taxBase * T.shortTerm.under2;
-    else tax = progressive(T.brackets, taxBase) + taxBase * heavy;
+    const general = progressive(T.brackets, taxBase) + taxBase * heavy;
+    if (i.yearsHeld < 1) tax = Math.max(taxBase * T.shortTerm.under1, general);
+    else if (i.yearsHeld < 2) tax = Math.max(taxBase * T.shortTerm.under2, general);
+    else tax = general;
 
     Object.assign(res, { taxableGain: taxable, ltRate, ltDeduction, taxBase, tax: floorWon(tax), local: floorWon(tax * T.localIncomeRate) });
     res.total = res.tax + res.local;
@@ -361,7 +374,8 @@
     const r = region(s.regionId);
 
     const buyUpfront = s.price - s.loan + s.closing;
-    const rentBroker = brokerFee(s.rentDeposit + s.rentMonthly * 100, 'lease', s.vat);
+    const rentBroker = brokerFee(leaseBase(s.rentDeposit, s.rentMonthly), 'lease', s.vat);
+    const useRenewal = s.useRenewalRight !== false;
     const rentUpfront = s.rentDeposit - s.rentLoan + rentBroker + s.moveCost;
 
     let buyPort = s.cash - buyUpfront - s.moveCost;
@@ -370,6 +384,7 @@
     let deposit = s.rentDeposit;
     let monthly = s.rentMonthly;
     let rentLoan = s.rentLoan;
+    let rentIndex = 1; // 최초 계약 대비 임차료 배수
     let yearHolding = 0;
     const series = [{ year: 0, buy: s.cash - buyUpfront - s.moveCost + (s.price - s.loan), rent: s.cash - rentUpfront + (s.rentDeposit - s.rentLoan), price }];
     let buyHousingCost = 0, rentHousingCost = 0;
@@ -380,20 +395,28 @@
         const pp = price * (s.publicRatio ?? P.HOLDING.publicPriceRatio);
         yearHolding = holdingTax({ publicPrice: pp, oneHouse: s.oneHouse, homes: s.homesAfter, age: (s.age || 40) + y, yearsHeld: y, resident: true, reform2026: s.reform2026 }).total;
       }
-      const g = s.appreciationPath ? s.appreciationPath[y] : s.appreciation;
-      const inv = s.invPath ? s.invPath[y] : s.invReturn;
+      const g = Math.max(-0.95, s.appreciationPath ? s.appreciationPath[y] : s.appreciation);
+      const inv = Math.max(-0.95, s.invPath ? s.invPath[y] : s.invReturn);
       const gm = Math.pow(1 + g, 1 / 12) - 1;
       const im = Math.pow(1 + inv, 1 / 12) - 1;
 
-      // 임차 갱신 (24개월마다, 초기 제외)
+      // 임차 계약 만료 (24개월마다). 계약갱신청구권을 쓰면 2+2년 주기로
+      // 갱신 때는 5% 상한·이사 없음, 새 계약 때는 시세 반영·중개보수·이사비 부담
       if (m > 0 && m % 24 === 0) {
-        const grow = Math.pow(1 + s.rentGrowth, 2);
-        const newDeposit = deposit * grow;
-        rentPort -= newDeposit - deposit; // 보증금 증액분은 투자자산에서 충당
-        rentPort -= brokerFee(newDeposit + monthly * grow * 100, 'lease', s.vat) + s.moveCost;
-        rentHousingCost += brokerFee(newDeposit + monthly * grow * 100, 'lease', s.vat) + s.moveCost;
+        const market = Math.pow(1 + s.rentGrowth, m / 12);
+        const renewal = useRenewal && m % 48 === 24;
+        const target = renewal ? Math.min(market, rentIndex * (1 + P.RENT.renewalCap)) : market;
+        rentIndex = target;
+        const newDeposit = s.rentDeposit * target;
+        const newMonthly = s.rentMonthly * target;
+        rentPort -= newDeposit - deposit; // 보증금 증감분은 투자자산에서 충당
+        if (!renewal) {
+          const cost = brokerFee(leaseBase(newDeposit, newMonthly), 'lease', s.vat) + s.moveCost;
+          rentPort -= cost;
+          rentHousingCost += cost;
+        }
         deposit = newDeposit;
-        monthly *= grow;
+        monthly = newMonthly;
       }
 
       const mortgage = m < sch.payment.length ? sch.payment[m] : 0;
@@ -447,7 +470,7 @@
   // 몬테카를로: 연도별 집값상승률·투자수익률을 정규분포로 샘플링
   function monteCarlo(s, opt) {
     const runs = opt.runs || 1000;
-    const rand = mulberry32(opt.seed || 42);
+    const rand = mulberry32(opt.seed ?? 42);
     const diffs = [];
     const finals = [];
     for (let k = 0; k < runs; k++) {
@@ -477,6 +500,49 @@
     const out = Array.from({ length: bins }, (_, k) => ({ from: min + k * w, to: min + (k + 1) * w, count: 0 }));
     for (const v of values) out[clamp(Math.floor((v - min) / w), 0, bins - 1)].count++;
     return out;
+  }
+
+  // ── 최대 매수 가능가 ──────────────────────────────────────────────────
+  /**
+   * 보유 현금 + 대출 한도 − 취득 부대비용으로 살 수 있는 최고 가격 (이분탐색).
+   * i: loanLimit 입력 + cash, moveCost, areaOver85, homesAfter, temporaryTwo, publicRatio, bondDiscount, vat
+   */
+  function maxAffordablePrice(i) {
+    const need = (price) => {
+      const loan = loanLimit({ ...i, price }).amount;
+      const closing = closingCosts({ ...i, price, firstTime: i.buyerType === 'first', publicPrice: price * (i.publicRatio ?? P.HOLDING.publicPriceRatio) }).total;
+      return { loan, gap: price - loan + closing + (i.moveCost || 0) - i.cash };
+    };
+    let lo = 0, hi = Math.max(1 * EOK, i.cash * 20);
+    if (need(hi).gap <= 0) return { price: hi, loan: need(hi).loan, capped: true };
+    for (let k = 0; k < 50; k++) {
+      const mid = (lo + hi) / 2;
+      if (need(mid).gap <= 0) lo = mid; else hi = mid;
+    }
+    const price = Math.floor(lo / 1e6) * 1e6;
+    return { price, loan: need(price).loan, capped: false };
+  }
+
+  // ── 민감도 분석 (토네이도) ────────────────────────────────────────────
+  // 가정 하나씩 흔들어 매수−임차 순자산 차이가 얼마나 변하는지 측정
+  function sensitivity(s) {
+    const base = simulate(s).diff;
+    const knobs = [
+      { key: 'appreciation', label: '집값 상승률', step: 0.02, unit: '%p' },
+      { key: 'invReturn', label: '투자수익률', step: 0.02, unit: '%p' },
+      { key: 'rate', label: '대출 금리', step: 0.01, unit: '%p' },
+      { key: 'rentGrowth', label: '전월세 상승률', step: 0.02, unit: '%p' },
+      { key: 'maintenanceRate', label: '수선·유지비', step: 0.002, unit: '%p' },
+    ];
+    const rows = knobs.map((k) => {
+      const low = simulate({ ...s, [k.key]: s[k.key] - k.step }).diff - base;
+      const high = simulate({ ...s, [k.key]: s[k.key] + k.step }).diff - base;
+      return { ...k, low, high, range: Math.abs(high - low) };
+    });
+    const years = [Math.max(1, s.years - 5), s.years + 5].map((y) => simulate({ ...s, years: y }).diff);
+    rows.push({ key: 'years', label: '보유 기간', step: 5, unit: '년', low: years[0] - base, high: years[1] - base, range: Math.abs(years[1] - years[0]) });
+    rows.sort((a, b) => b.range - a.range);
+    return { base, rows };
   }
 
   // ── 스트레스 테스트 ───────────────────────────────────────────────────
@@ -552,7 +618,7 @@
   /** 헤더 행을 찾아 {date, area, price, floor, name} 거래 목록 반환. 금액(만원) → 원 */
   function parseTransactions(text) {
     const rows = parseCsv(text.replace(/^﻿/, ''));
-    const hi = rows.findIndex((r) => r.some((c) => c.includes('거래금액')));
+    const hi = rows.findIndex((r) => r.some((c) => c.includes('거래금액')) && r.some((c) => c.includes('계약년월')));
     if (hi < 0) throw new Error('거래금액 열을 찾을 수 없습니다');
     const h = rows[hi].map((c) => c.trim());
     const col = (re) => h.findIndex((c) => re.test(c));
@@ -568,7 +634,7 @@
       out.push({
         date: ym.length >= 6 ? `${ym.slice(0, 4)}-${ym.slice(4, 6)}-${day.padStart(2, '0')}` : null,
         area: Number(r[cArea]) || null, price,
-        name: cName >= 0 ? r[cName] : '', floor: cFloor >= 0 ? Number(r[cFloor]) : null,
+        name: cName >= 0 ? r[cName] : '', floor: cFloor >= 0 && String(r[cFloor]).trim() !== '' ? Number(r[cFloor]) : null,
       });
     }
     return out.filter((t) => t.date).sort((a, b) => a.date.localeCompare(b.date));
@@ -600,8 +666,8 @@
 
   return {
     pmt, pv, schedule, annualDebtService, loanLimit, policyLoanEligibility,
-    generalAcqRate, acquisitionTax, brokerFee, bondCost, closingCosts,
+    generalAcqRate, acquisitionTax, brokerFee, leaseBase, bondCost, closingCosts,
     holdingTax, capitalGainsTax, simulate, breakevenAppreciation, monteCarlo,
-    stressTest, verdict, parseCsv, parseTransactions, comparables, region,
+    stressTest, verdict, maxAffordablePrice, sensitivity, parseCsv, parseTransactions, comparables, region,
   };
 });

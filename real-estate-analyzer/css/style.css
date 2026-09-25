@@ -203,3 +203,11 @@ textarea { font-family: var(--font-mono); font-size: 12px; resize: vertical; }
 @media (prefers-reduced-motion: no-preference) {
   .bar .fill { transition: width 0.3s ease; }
 }
+
+/* 토네이도 */
+.tn { display: grid; gap: 8px; }
+.tn-row { display: grid; grid-template-columns: minmax(130px, 170px) minmax(0, 1fr) minmax(120px, auto); gap: 10px; align-items: center; font-size: 13px; }
+.tn-track { position: relative; height: 14px; background: linear-gradient(var(--ink-3), var(--ink-3)) center / 1px 100% no-repeat, var(--surface-2); border-radius: 3px; }
+.tn-bar { position: absolute; top: 0; bottom: 0; }
+.tn-vals { font-size: 12px; color: var(--ink-2); text-align: right; }
+@media (max-width: 560px) { .tn-row { grid-template-columns: 1fr auto; } .tn-track { grid-column: 1 / -1; grid-row: 2; } }

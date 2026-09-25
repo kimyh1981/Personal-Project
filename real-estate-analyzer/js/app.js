@@ -56,7 +56,12 @@
     } catch (_) { /* 무시 */ }
   }
   function read() {
-    const n = (id, scale = 1) => { const v = parseFloat($(id).value); return isFinite(v) ? v * scale : 0; };
+    // 빈 칸은 예시 기본값으로 대신한다 (0으로 조용히 바뀌지 않도록)
+    const n = (id, scale = 1) => {
+      let v = parseFloat($(id).value);
+      if (!isFinite(v)) v = parseFloat(defaults[id]);
+      return isFinite(v) ? v * scale : 0;
+    };
     const opt = (id, scale = 1) => { const v = parseFloat($(id).value); return isFinite(v) ? v * scale : null; };
     return {
       regionId: $('regionId').value,
@@ -71,7 +76,7 @@
       years: Math.min(30, Math.max(1, Math.round(n('years')))), appreciation: n('appreciation', 0.01), appreciationVol: n('appreciationVol', 0.01),
       rentGrowth: n('rentGrowth', 0.01), invReturn: n('invReturn', 0.01), invVol: n('invVol', 0.01),
       maintenanceRate: n('maintenanceRate', 0.01), moveCost: n('moveCost', MAN), bondDiscount: n('bondDiscount', 0.01),
-      vat: $('vat').checked, reform2026: $('reform2026').checked,
+      vat: $('vat').checked, reform2026: $('reform2026').checked, useRenewalRight: $('useRenewalRight').checked,
     };
   }
 
@@ -117,7 +122,7 @@
       closing: closing.total, regionId: i.regionId, homesAfter: hh.homesAfter, publicRatio: i.publicRatio,
       maintenanceRate: i.maintenanceRate, appreciation: i.appreciation, invReturn: i.invReturn,
       rentDeposit: i.rentDeposit, rentMonthly: i.rentMonthly, rentLoan: Math.min(i.rentLoan, i.rentDeposit), rentLoanRate: i.rentLoanRate,
-      rentGrowth: i.rentGrowth, moveCost: i.moveCost, oneHouse: hh.oneHouse, age: i.age, reform2026: i.reform2026, vat: i.vat,
+      rentGrowth: i.rentGrowth, useRenewalRight: i.useRenewalRight, moveCost: i.moveCost, oneHouse: hh.oneHouse, age: i.age, reform2026: i.reform2026, vat: i.vat,
     };
     const base = E.simulate(sim);
     const breakeven = E.breakevenAppreciation(sim);
@@ -126,6 +131,13 @@
       price: i.price, householdIncome: i.annualIncome, netAsset: i.cash, areaM2: i.areaM2, buyerType: i.buyerType,
       newlywed: i.newlywed, newborn: i.newborn, multichild: i.multichild,
     });
+    const afford = E.maxAffordablePrice({
+      regionId: i.regionId, buyerType: i.buyerType, annualIncome: i.annualIncome, existingAnnualDebtService: i.existingDebt,
+      rate: i.rate, termYears: i.termYears, method: i.method, rateType: i.rateType, lender: i.lender,
+      cash: i.cash, moveCost: i.moveCost, homesAfter: hh.homesAfter, temporaryTwo: hh.temporaryTwo,
+      areaOver85: i.areaM2 > 85, publicRatio: i.publicRatio, bondDiscount: i.bondDiscount, vat: i.vat,
+    });
+    const sens = base.feasible ? E.sensitivity(sim) : null;
     const jeonseRatio = i.jeonsePrice > 0 ? i.jeonsePrice / i.price : null;
     const v = E.verdict({
       fundingGap, burden: monthlyIncome > 0 ? monthlyPayment / monthlyIncome : Infinity,
@@ -135,7 +147,7 @@
       emergencyMonths: i.monthlyLiving > 0 ? Math.max(0, leftover) / i.monthlyLiving : 99,
       jeonseRatio, pir: i.annualIncome > 0 ? i.price / i.annualIncome : null,
     });
-    return { i, hh, r, limit, loan, termYears, publicPrice, closing, holding, monthlyPayment, need, fundingGap, leftover, stress, sim, base, breakeven, mc, policyLoans, jeonseRatio, v };
+    return { i, hh, r, afford, sens, limit, loan, termYears, publicPrice, closing, holding, monthlyPayment, need, fundingGap, leftover, stress, sim, base, breakeven, mc, policyLoans, jeonseRatio, v };
   }
 
   // ── 렌더 ──────────────────────────────────────────────────────────────
@@ -156,7 +168,7 @@
     const k = [
       { k: '대출 가능액', v: won(c.loan), s: `한도 결정: ${c.limit.binding.label}` },
       { k: '필요 자기자본', v: won(c.need), s: c.fundingGap > 0 ? `${won(c.fundingGap)} 부족` : `여유 ${won(c.leftover)}` },
-      { k: '월 상환액 (첫 달)', v: won(c.monthlyPayment), s: `월 소득의 ${pct(c.monthlyPayment / (c.i.annualIncome / 12))}` },
+      { k: '월 상환액 (첫 달)', v: won(c.monthlyPayment), s: c.i.annualIncome > 0 ? `월 소득의 ${pct(c.monthlyPayment / (c.i.annualIncome / 12))}` : '소득 없음' },
       { k: '취득 부대비용', v: won(c.closing.total), s: `매매가의 ${pct(c.closing.total / c.i.price, 2)}` },
     ];
     $('kpis').innerHTML = k.map((x) => `<div class="kpi"><span class="k">${x.k}</span><span class="v">${esc(x.v)}</span><span class="s">${esc(x.s)}</span></div>`).join('');
@@ -180,6 +192,11 @@
         <p class="muted">${esc(zoneName)} · DSR 심사금리 ${pct(L.dsrRate, 2)} (실금리 ${pct(c.i.rate, 2)} + 스트레스 ${pct(L.stress, 2)}) · 만기 ${L.termYears}년</p>
         <div class="bars">${bars}</div>
       </div>
+        <div class="card">
+          <h3>이 조건으로 살 수 있는 최고 가격</h3>
+          <p class="big">${esc(won(c.afford.price))}${c.afford.capped ? ' 이상' : ''}</p>
+          <p class="muted">보유 현금 ${esc(won(c.i.cash))} + 대출 ${esc(won(c.afford.loan))} − 취득 부대비용·이사비. 지금 매매가는 이 한도의 ${pct(c.i.price / c.afford.price, 0)}입니다.</p>
+        </div>
         <div class="card">
           <h3>대출 조건·의무</h3>
           <ul class="plain">${L.conditions.map((x) => `<li>${esc(x)}</li>`).join('') || '<li>특이 조건 없음</li>'}</ul>
@@ -269,6 +286,7 @@
           <p class="muted" style="font-size:12px">하위 10% ${esc(won(mc.diff.p10, { sign: true }))} · 중앙값 ${esc(won(mc.diff.p50, { sign: true }))} · 상위 10% ${esc(won(mc.diff.p90, { sign: true }))}</p>
         </div>
       </div>`;
+    if (c.sens) tab.insertAdjacentHTML('beforeend', tornado(c.sens));
     const yFmt = (v, full) => (full ? won(v) : won(v, { short: true }));
     C.line($('nwChart'), {
       series: [
@@ -282,6 +300,28 @@
       colorFor: (bin) => ((bin.from + bin.to) / 2 >= 0 ? '--s-buy' : '--s-rent'),
       ariaLabel: '순자산 차이 분포',
     });
+  }
+
+  // 가정 하나를 흔들 때 매수−임차 차이 변화 (양수 = 매수에 유리)
+  function tornado(sens) {
+    const max = Math.max(...sens.rows.flatMap((r) => [Math.abs(r.low), Math.abs(r.high)]), 1);
+    const side = (v) => {
+      const w = (Math.abs(v) / max) * 50;
+      return `<span class="tn-bar" style="${v >= 0 ? `left:50%;width:${w}%;background:var(--s-buy);border-radius:0 4px 4px 0` : `right:50%;width:${w}%;background:var(--s-rent);border-radius:4px 0 0 4px`}"></span>`;
+    };
+    const step = (r) => (r.unit === '년' ? `±${r.step}년` : `±${(r.step * 100).toFixed(r.step < 0.01 ? 1 : 0)}%p`);
+    const rows = sens.rows.map((r) => `
+      <div class="tn-row">
+        <span class="tn-label">${esc(r.label)} <span class="unit">${step(r)}</span></span>
+        <span class="tn-track" title="낮추면 ${esc(won(r.low, { sign: true }))}, 높이면 ${esc(won(r.high, { sign: true }))}">${side(r.low)}${side(r.high)}</span>
+        <span class="tn-vals num">${esc(won(r.low, { sign: true, short: true }))} / ${esc(won(r.high, { sign: true, short: true }))}</span>
+      </div>`).join('');
+    return `<div class="card">
+      <h3>어떤 가정이 결론을 가장 크게 흔드나</h3>
+      <p class="muted">가정 하나를 낮출 때 / 높일 때 매수−임차 순자산 차이가 얼마나 변하는지입니다. 위쪽 항목일수록 신중하게 가정하세요.</p>
+      <div class="legend"><span><i style="--c:var(--s-buy)"></i>매수 쪽으로 이동</span><span><i style="--c:var(--s-rent)"></i>임차 쪽으로 이동</span></div>
+      <div class="tn">${rows}</div>
+    </div>`;
   }
 
   function renderRisk(c) {
@@ -313,7 +353,7 @@
       <div class="card">
         <h3>가격 수준 점검</h3>
         <ul class="plain">
-          <li>PIR (매매가 ÷ 연소득) ${(c.i.price / c.i.annualIncome).toFixed(1)}배 — 서울 중위 가구는 대체로 10배 이상입니다.</li>
+          ${c.i.annualIncome > 0 ? `<li>PIR (매매가 ÷ 연소득) ${(c.i.price / c.i.annualIncome).toFixed(1)}배 — 서울 중위 가구는 대체로 10배 이상입니다.</li>` : ''}
           ${jr != null ? `<li>전세가율 ${pct(jr)} — 전세가는 거주 가치, 나머지 ${pct(1 - jr)}는 미래 상승 기대가 반영된 몫입니다.</li>
           <li>임대수익률 환산 (전세 × 전월세전환율 4.5% ÷ 매매가) ${pct((c.i.jeonsePrice * 0.045) / c.i.price, 2)} — 대출 금리 ${pct(c.i.rate, 2)}${(c.i.jeonsePrice * 0.045) / c.i.price < c.i.rate ? '보다 낮아 보유 자체의 현금 수익은 불리합니다.' : ' 이상입니다.'}</li>` : ''}
           ${rentRisk}
@@ -393,7 +433,11 @@
     const i = read();
     const r = E.region(i.regionId);
     $('regionHint').textContent = [r.regulated ? '규제지역' : '비규제', r.capital ? '수도권' : '지방', r.landPermit ? '토지거래허가구역' : null].filter(Boolean).join(' · ');
-    if (!(i.price > 0) || !(i.annualIncome > 0)) return;
+    if (!(i.price > 0)) {
+      $('verdict').dataset.tone = 'warning';
+      $('verdict').innerHTML = '<div></div><div><h2>매매가를 입력하세요</h2><p class="sub">매매가가 0보다 커야 계산할 수 있습니다.</p></div>';
+      return;
+    }
     const c = compute(i);
     renderVerdict(c); renderKpis(c); renderLoan(c); renderCost(c); renderCompare(c); renderRisk(c); renderMarket(c);
     persist();

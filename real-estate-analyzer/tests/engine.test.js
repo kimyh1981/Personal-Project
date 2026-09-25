@@ -171,3 +171,63 @@ test('종합 판정', () => {
   const bad = E.verdict({ fundingGap: 1 * EOK, burden: 0.25, stressBurden: 0.33, buyWinProb: 0.7, breakeven: 0.01, expectedAppreciation: 0.03, emergencyMonths: 8, jeonseRatio: 0.6, pir: 9 });
   assert.equal(bad.tone, 'critical');
 });
+
+test('중개보수 경계값은 상위 요율 (N 미만 기준)', () => {
+  assert.equal(E.brokerFee(9 * EOK, 'sale'), 450 * MAN);
+  assert.equal(E.brokerFee(12 * EOK, 'sale'), 720 * MAN);
+  assert.equal(E.brokerFee(15 * EOK, 'sale'), 1050 * MAN);
+  assert.equal(E.brokerFee(6 * EOK, 'lease'), 240 * MAN);
+  assert.equal(E.brokerFee(5.99 * EOK, 'lease'), Math.round(5.99 * EOK * 0.003));
+  assert.equal(E.leaseBase(500 * MAN, 30 * MAN), 500 * MAN + 30 * MAN * 70); // 3,500만 < 5천만 → ×70
+  assert.equal(E.leaseBase(1 * EOK, 50 * MAN), 1 * EOK + 50 * MAN * 100);
+});
+
+test('취득세 6~9억 세율 반올림: 7억 → 1.67%', () => {
+  assert.equal(E.generalAcqRate(7 * EOK), 0.0167);
+  assert.equal(E.generalAcqRate(8 * EOK), 0.0233);
+});
+
+test('단기 양도 + 중과: 단기세율과 기본세율+중과 중 큰 값', () => {
+  const t = E.capitalGainsTax({ buyPrice: 10 * EOK, sellPrice: 15 * EOK, yearsHeld: 1.5, yearsResided: 0, oneHouse: false, homesAtSale: 3, regulatedAtSale: true });
+  const base = 5 * EOK - 250 * MAN;
+  // 과세표준 4.975억: 40% 구간(누진공제 2,594만) + 3주택 중과 30%p > 단기 60%
+  assert.equal(t.tax, Math.floor(Math.max(base * 0.6, base * 0.4 - 2594 * MAN + base * 0.3) / 10) * 10);
+});
+
+test('DSR: 총 대출 1억 이하 미적용', () => {
+  const r = E.loanLimit({ ...baseLoan, annualIncome: 1000 * MAN, price: 1.4 * EOK, regionId: 'local', buyerType: 'nohome' });
+  assert.equal(r.binding.key, 'ltv');
+  assert.equal(r.amount, 0.98 * EOK);
+});
+
+test('계약갱신청구권: 첫 갱신은 5% 상한·비용 없음', () => {
+  const s = { ...sim, rentGrowth: 0.06, years: 4 };
+  const withRight = E.simulate(s);
+  const without = E.simulate({ ...s, useRenewalRight: false });
+  assert.ok(withRight.rentFinal > without.rentFinal);
+  assert.ok(withRight.rentHousingCost < without.rentHousingCost);
+});
+
+test('몬테카를로: 극단적 변동성에서도 NaN 없음', () => {
+  const r = E.monteCarlo(sim, { runs: 100, seed: 0, appreciationVol: 0.8, invVol: 0.8 });
+  assert.ok(Number.isFinite(r.diff.p50));
+});
+
+test('최대 매수 가능가: 경계에서 자금이 딱 맞는다', () => {
+  const i = { ...baseLoan, regionId: 'seoul-마포구', buyerType: 'nohome', cash: 6 * EOK, moveCost: 300 * MAN, homesAfter: 1, publicRatio: 0.69, bondDiscount: 0.08 };
+  const r = E.maxAffordablePrice(i);
+  // LTV 40%이므로 대략 현금 / 0.6 근처, 부대비용 때문에 조금 낮다
+  assert.ok(r.price > 9 * EOK && r.price < 10 * EOK, String(r.price));
+  const loan = E.loanLimit({ ...i, price: r.price }).amount;
+  const cl = E.closingCosts({ ...i, price: r.price, publicPrice: r.price * 0.69 }).total;
+  assert.ok(r.price - loan + cl + 300 * MAN <= 6 * EOK);
+});
+
+test('민감도: 집값 상승률을 올리면 매수 쪽 차이가 커진다', () => {
+  const r = E.sensitivity(sim);
+  const a = r.rows.find((x) => x.key === 'appreciation');
+  assert.ok(a.high > 0 && a.low < 0);
+  const rate = r.rows.find((x) => x.key === 'rate');
+  assert.ok(rate.high < 0);
+  assert.equal(r.rows.length, 6);
+});
