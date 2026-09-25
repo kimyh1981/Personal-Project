@@ -712,6 +712,82 @@
     return { items: out, totalCount: Number(tag(xml, 'totalCount')) || out.length };
   }
 
+  // ── 소득·상환 능력 (실제 월 현금흐름) ─────────────────────────────────
+  /**
+   * DSR은 은행 심사 기준일 뿐, 실제로 매달 갚을 수 있는지는 세후 현금흐름으로 본다.
+   * i: netMonthly(세후 월 실수령, 가구), living(월 생활비), existingMonthly(기존 대출 월 상환),
+   *    newPayment(새 대출 월 상환), stressPayment(금리 +2%p 월 상환), holdingMonthly(보유세·수선비 월),
+   *    otherMonthly(개인 차입 이자 등), ownIncome, spouseIncome(세전 연), cashAfter(매수 후 여유 현금),
+   *    age, retireAge, loan, rate, termYears, method, incomeGrowth, employment, spouseEmployment
+   */
+  function repaymentCapacity(i) {
+    const I = P.INCOME;
+    const net = Math.max(0, i.netMonthly || 0);
+    const debt = (i.existingMonthly || 0) + (i.newPayment || 0) + (i.otherMonthly || 0);
+    const fixed = (i.living || 0) + (i.holdingMonthly || 0);
+    const surplus = net - fixed - debt;
+    const payRatio = net > 0 ? debt / net : Infinity;
+    const stressSurplus = surplus - Math.max(0, (i.stressPayment || 0) - (i.newPayment || 0));
+    const gross = (i.ownIncome || 0) + (i.spouseIncome || 0);
+    const spouseShare = gross > 0 ? (i.spouseIncome || 0) / gross : 0;
+    const singleSurplus = spouseShare > 0 ? net * (1 - spouseShare) - fixed - debt : null;
+    const cash = Math.max(0, i.cashAfter || 0);
+    // 버틸 수 있는 개월 수: 월 적자를 여유 현금으로 메운다
+    const runway = (deficit) => (deficit > 0 ? cash / deficit : Infinity);
+    const runwaySingle = singleSurplus != null ? runway(-singleSurplus) : null;
+    const runwayNoIncome = runway(fixed + debt);
+    const growth = i.incomeGrowth || 0;
+    const payRatio5y = payRatio / Math.pow(1 + growth, 5); // 상환액 고정, 소득만 증가
+
+    let retire = null;
+    if (i.retireAge && i.age && i.loan > 0) {
+      const yearsToRetire = Math.max(0, i.retireAge - i.age);
+      if (yearsToRetire < i.termYears) {
+        const sch = schedule(i.loan, i.rate, i.termYears, i.method);
+        retire = { yearsToRetire, balance: yearsToRetire > 0 ? sch.balance[yearsToRetire * 12 - 1] : i.loan, remainingYears: i.termYears - yearsToRetire };
+      } else retire = { yearsToRetire, balance: 0, remainingYears: 0 };
+    }
+
+    const emp = I.employment[i.employment] || I.employment.regular;
+    const spEmp = I.employment[i.spouseEmployment] || null;
+    const man = (x) => {
+      const v = Math.round(Math.abs(x) / 1e4), eok = Math.floor(v / 1e4), rest = v % 1e4;
+      const t = eok && rest ? `${eok.toLocaleString()}억 ${rest.toLocaleString()}만원` : eok ? `${eok.toLocaleString()}억원` : `${rest.toLocaleString()}만원`;
+      return (x < 0 ? '−' : '') + t;
+    };
+    const months = (m) => (isFinite(m) ? `${m.toFixed(1)}개월` : '적자 없음');
+    const checks = [];
+    const add = (key, label, status, detail) => checks.push({ key, label, status, detail });
+
+    add('surplus', '매달 남는 돈', surplus >= net * I.surplusGoodRatio ? 'good' : surplus >= 0 ? 'warning' : 'critical',
+      `${man(surplus)} = 실수령 ${man(net)} − 생활비·보유비 ${man(fixed)} − 대출 상환 ${man(debt)}`);
+    add('payRatio', '실수령 대비 대출 상환', payRatio <= I.comfortablePayRatio ? 'good' : payRatio <= I.maxPayRatio ? 'warning' : 'critical',
+      `${(payRatio * 100).toFixed(1)}% (35% 이하 권장)${growth > 0 ? ` · 소득이 연 ${(growth * 100).toFixed(1)}% 늘면 5년 뒤 ${(payRatio5y * 100).toFixed(1)}%` : ''}`);
+    add('stressSurplus', '금리 +2%p 때 남는 돈', stressSurplus >= 0 ? 'good' : runway(-stressSurplus) >= I.runwayGoodMonths ? 'warning' : 'critical',
+      stressSurplus >= 0 ? man(stressSurplus) : `${man(stressSurplus)} 적자 — 여유 현금으로 ${months(runway(-stressSurplus))} 버팀`);
+    if (singleSurplus != null) {
+      add('single', '한 사람 소득이 끊기면', singleSurplus >= 0 ? 'good' : runwaySingle >= I.runwayGoodMonths ? 'warning' : 'critical',
+        singleSurplus >= 0 ? `외벌이로도 ${man(singleSurplus)} 남음` : `월 ${man(-singleSurplus)} 적자 — ${months(runwaySingle)} 버팀`);
+    }
+    add('runway', '소득이 모두 끊기면', runwayNoIncome >= I.runwayGoodMonths ? 'good' : runwayNoIncome >= I.runwayMinMonths ? 'warning' : 'critical',
+      `여유 현금으로 생활비·상환을 ${months(runwayNoIncome)} 감당 (6개월 이상 권장)`);
+    if (retire && retire.remainingYears > 0) {
+      add('retire', '은퇴 전 상환', retire.balance <= net * 12 * 2 ? 'warning' : 'critical',
+        `${i.retireAge}세 은퇴 때 대출 잔액 ${man(retire.balance)}, ${retire.remainingYears}년 더 갚아야 함 — 퇴직금·연금·매도로 정리할 계획 필요`);
+    } else if (retire) add('retire', '은퇴 전 상환', 'good', `${i.retireAge}세 은퇴 전에 상환 완료`);
+    const unstable = emp.stability < 0.7 || (spEmp && spEmp.stability > 0 && spEmp.stability < 0.7);
+    add('stability', '소득 안정성', unstable ? 'warning' : 'good',
+      `${emp.label}${spEmp ? ` · 배우자 ${spEmp.label}` : ''}${unstable ? ' — 소득 변동에 대비해 12개월치 여유자금 권장, 은행 DSR은 소득금액증명원 기준' : ''}`);
+
+    return { net, fixed, debt, surplus, payRatio, payRatio5y, stressSurplus, spouseShare, singleSurplus, runwaySingle, runwayNoIncome, retire, employment: emp, checks };
+  }
+
+  // DSR에 들어가는 기존 부채 연 원리금 (신용대출은 5년 분할상환으로 간주)
+  function existingDebtService(otherAnnual, creditBalance, creditRate) {
+    const credit = creditBalance > 0 ? pmt(creditBalance, creditRate || 0.055, P.INCOME.creditLoanDsrYears * 12) * 12 : 0;
+    return (otherAnnual || 0) + credit;
+  }
+
   // ── 스트레스 테스트 ───────────────────────────────────────────────────
   function stressTest(i) {
     // i: loan, rate, termYears, method, monthlyIncome, price, equity
@@ -740,9 +816,9 @@
     else if (ctx.privateUsed > 0) add('funding', '자금 조달', 'warning', `예산 밖 — 개인 차입 ${Math.round(ctx.privateUsed / 1e4).toLocaleString()}만원을 더해 조달`);
     else add('funding', '자금 조달', 'good', '대출+보유현금으로 매수 가능');
 
-    add('burden', '월 상환 부담률', ctx.burden <= 0.3 ? 'good' : ctx.burden <= 0.4 ? 'warning' : 'critical', `월 소득 대비 ${pct(ctx.burden)} (권장 30% 이하)`);
-    add('stress', '금리 +2%p 시 부담률', ctx.stressBurden <= 0.4 ? 'good' : ctx.stressBurden <= 0.5 ? 'warning' : 'critical', pct(ctx.stressBurden));
-    add('emergency', '비상자금', ctx.emergencyMonths >= 6 ? 'good' : ctx.emergencyMonths >= 3 ? 'warning' : 'critical', `매수 후 여유자금 ≈ 생활비 ${ctx.emergencyMonths.toFixed(1)}개월분 (권장 6개월)`);
+    add('burden', '세전 소득 대비 월 상환', ctx.burden <= 0.3 ? 'good' : ctx.burden <= 0.4 ? 'warning' : 'critical', `월 소득 대비 ${pct(ctx.burden)} (권장 30% 이하)`);
+    if (ctx.stressBurden != null) add('stress', '금리 +2%p 시 부담률', ctx.stressBurden <= 0.4 ? 'good' : ctx.stressBurden <= 0.5 ? 'warning' : 'critical', pct(ctx.stressBurden));
+    if (ctx.emergencyMonths != null) add('emergency', '비상자금', ctx.emergencyMonths >= 6 ? 'good' : ctx.emergencyMonths >= 3 ? 'warning' : 'critical', `매수 후 여유자금 ≈ 생활비 ${ctx.emergencyMonths.toFixed(1)}개월분 (권장 6개월)`);
 
     if (ctx.buyWinProb != null) add('mc', '매수가 임차보다 유리할 확률', ctx.buyWinProb >= 0.6 ? 'good' : ctx.buyWinProb >= 0.4 ? 'warning' : 'critical', pct(ctx.buyWinProb));
     if (ctx.gapExcess != null) add('gap', '투자 초과수익 (같은 돈 대안 투자 대비)', ctx.gapExcess > 0 ? 'good' : ctx.gapExcess > -0.05 * ctx.gapEquity ? 'warning' : 'critical', `${ctx.gapExcess >= 0 ? '+' : '−'}${Math.round(Math.abs(ctx.gapExcess) / 1e4).toLocaleString()}만원`);
@@ -753,6 +829,7 @@
     if (ctx.jeonseRatio != null) add('jeonse', '전세가율', ctx.jeonseRatio >= 0.5 ? 'good' : ctx.jeonseRatio >= 0.4 ? 'warning' : 'serious', `${pct(ctx.jeonseRatio)} — ${ctx.jeonseRatio < 0.4 ? '사용가치 대비 기대 프리미엄이 큼' : '사용가치가 가격을 받쳐줌'}`);
     if (ctx.pir != null) add('pir', 'PIR (가격/연소득)', ctx.pir <= 10 ? 'good' : ctx.pir <= 15 ? 'warning' : 'serious', `${ctx.pir.toFixed(1)}배`);
 
+    for (const x of ctx.extraChecks || []) checks.push(x);
     const weight = { good: 2, warning: 1, serious: 0.5, critical: 0 };
     const score = Math.round((checks.reduce((a, c) => a + weight[c.status], 0) / (checks.length * 2)) * 100);
     const blocked = checks.some((c) => c.key === 'funding' && c.status === 'critical');
@@ -838,6 +915,6 @@
     pmt, pv, schedule, annualDebtService, loanLimit, policyLoanEligibility,
     generalAcqRate, acquisitionTax, brokerFee, leaseBase, bondCost, closingCosts,
     holdingTax, capitalGainsTax, simulate, breakevenAppreciation, monteCarlo,
-    stressTest, verdict, gapInvestment, privateFinance, maxAffordablePrice, sensitivity, timingCompare, parseRtmsXml, parseCsv, parseTransactions, comparables, region,
+    stressTest, verdict, gapInvestment, privateFinance, repaymentCapacity, existingDebtService, maxAffordablePrice, sensitivity, timingCompare, parseRtmsXml, parseCsv, parseTransactions, comparables, region,
   };
 });

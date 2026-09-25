@@ -120,7 +120,7 @@ test('규제 변경 감지: 출처를 못 읽으면 ok=false', async () => {
 test('조건 판정: 최신 데이터 우선, 미확인이면 경고', () => {
   const base = {
     purpose: '거주', regionId: 'incheon', propertyType: '아파트', areaM2: 84, price: 5e8, recentTrades: [], jeonse: null,
-    cash: 3e8, ownedHomes: 0, annualIncome: 8e7, location: { jobCommuteMin: 30, schoolWalkMin: 5 }, recon: { target: false },
+    cash: 3e8, ownedHomes: 0, annualIncome: 8e7, netMonthlyIncome: 5.5e6, employment: 'regular', location: { jobCommuteMin: 30, schoolWalkMin: 5 }, recon: { target: false },
     timing: { purchaseDate: '2026-11' }, loan: { rate: 0.04, termYears: 30 },
   };
   const fund = { price: 5e8, loanUsed: 2e8, tenantDeposit: 0, requiredCash: 3e8, surplus: 1e7, totalCost: 5.2e8, dsr: 0.2 };

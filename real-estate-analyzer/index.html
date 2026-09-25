@@ -84,28 +84,45 @@
         <label class="f wide">악재·혐오시설 <span class="unit">쉼표로 구분</span><input id="negatives" type="text" value=""></label>
       </fieldset>
 
-      <fieldset data-footer="연 순저축은 재건축 이주비·분담금을 마련할 수 있는지 볼 때 씁니다.">
+      <fieldset data-footer="생애최초는 평생 집을 가진 적이 없는 경우입니다. 나이는 종부세 고령자 공제와 은퇴 전 상환 계산에 씁니다.">
         <legend><span class="ico" style="--ico:#ff2d55" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9.5" r="2.3"/><path d="M16 14.2c2.3.2 4 1.8 4.5 4.3"/></svg></span><span>우리 가구</span></legend>
         <label class="f wide">주택 보유 상태
           <select id="buyerType">
-            <option value="first">생애최초 (평생 무주택)</option>
-            <option value="nohome" selected>무주택 (과거 보유 이력 있음)</option>
-            <option value="one_dispose">1주택 — 기존 집 처분 예정</option>
-            <option value="one">1주택 — 기존 집 유지</option>
+            <option value="first">생애최초</option>
+            <option value="nohome" selected>무주택</option>
+            <option value="one_dispose">1주택 · 처분 예정</option>
+            <option value="one">1주택 · 계속 보유</option>
             <option value="multi">2주택 이상</option>
           </select>
         </label>
-        <label class="f">부부합산 연소득 <span class="unit">만원</span><input id="annualIncome" type="number" step="100" value="12000" data-required></label>
-        <label class="f">기존 대출 연 원리금 <span class="unit">만원</span><input id="existingDebt" type="number" step="10" value="0"></label>
         <label class="f">보유 현금 <span class="unit">만원</span><input id="cash" type="number" step="100" value="65000" data-required></label>
-        <label class="f">연 순저축 <span class="unit">만원</span><input id="annualSavings" type="number" step="100" value="2400"></label>
-        <label class="f">월 생활비 <span class="unit">만원</span><input id="monthlyLiving" type="number" step="10" value="300"></label>
         <label class="f">세대주 나이 <span class="unit">세</span><input id="age" type="number" step="1" value="40"></label>
         <div class="checks wide">
           <label><input id="newlywed" type="checkbox"> 신혼(7년 내)</label>
           <label><input id="newborn" type="checkbox"> 2년 내 출산</label>
           <label><input id="multichild" type="checkbox"> 다자녀</label>
         </div>
+      </fieldset>
+
+      <fieldset data-footer="부부 공동이면 두 사람 소득을 합쳐 DSR 한도를 봅니다. 실제로 갚을 수 있는지는 세후 실수령에서 생활비·상환을 뺀 '매달 남는 돈'으로 판단하고, 연 순저축을 비우면 이 값 × 12를 씁니다.">
+        <legend><span class="ico" style="--ico:#34c759" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18M16 14.5h2"/></svg></span><span>소득·상환 능력</span></legend>
+        <label class="f wide">대출 명의
+          <select id="borrower">
+            <option value="joint" selected>부부 공동</option>
+            <option value="single">본인 단독</option>
+          </select>
+        </label>
+        <label class="f">본인 연소득 (세전) <span class="unit">만원</span><input id="annualIncome" type="number" step="100" value="7000" data-required></label>
+        <label class="f">배우자 연소득 (세전) <span class="unit">만원</span><input id="spouseIncome" type="number" step="100" value="5000"></label>
+        <label class="f">월 실수령액 (세후, 가구) <span class="unit">만원</span><input id="netMonthly" type="number" step="10" value="820" data-required></label>
+        <label class="f">본인 고용<select id="employment" data-required><option value="regular" selected>정규직</option><option value="public">공무원·공기업</option><option value="pro">전문직</option><option value="contract">계약직</option><option value="business">자영업</option><option value="freelance">프리랜서</option></select></label>
+        <label class="f">배우자 고용<select id="spouseEmployment"><option value="">없음</option><option value="regular" selected>정규직</option><option value="public">공무원·공기업</option><option value="pro">전문직</option><option value="contract">계약직</option><option value="business">자영업</option><option value="freelance">프리랜서</option></select></label>
+        <label class="f">연 소득 증가율 <span class="unit">%</span><input id="incomeGrowth" type="number" step="0.5" value="3"></label>
+        <label class="f">은퇴 예정 나이 <span class="unit">세</span><input id="retireAge" type="number" step="1" value="60"></label>
+        <label class="f">월 생활비 (대출 상환 제외) <span class="unit">만원</span><input id="monthlyLiving" type="number" step="10" value="300"></label>
+        <label class="f">기존 대출 연 원리금 <span class="unit">만원 · 주담대·할부 등</span><input id="existingDebt" type="number" step="10" value="0"></label>
+        <label class="f">신용대출 잔액 <span class="unit">만원 · DSR 5년 분할 간주</span><input id="creditBalance" type="number" step="100" value="0"></label>
+        <label class="f">연 순저축 <span class="unit">만원 · 비우면 자동</span><input id="annualSavings" type="number" step="100" placeholder="매달 남는 돈 × 12"></label>
       </fieldset>
 
       <fieldset data-footer="DSR은 실제 금리에 스트레스 가산금리를 더한 심사금리로 계산합니다.">

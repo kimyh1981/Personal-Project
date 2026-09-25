@@ -213,6 +213,25 @@
     note: '2026년 7월 대통령 분당 아파트 매도 때 매수인 잔금 유예에 매도인 근저당(채권최고액 17.7억)을 설정한 사례가 알려졌습니다. 이런 개인 간 금융은 금융권 대출 규제 밖이라 "규제 우회" 논란이 있었고, 추가 규제나 자금출처 검증 강화가 나올 수 있습니다.',
   };
 
+  // ── 소득·상환 능력 ────────────────────────────────────────────────────
+  const INCOME = {
+    employment: {
+      public: { label: '공무원·공기업', stability: 1.0 },
+      regular: { label: '정규직', stability: 0.9 },
+      pro: { label: '전문직 (의사·변호사 등)', stability: 0.85 },
+      contract: { label: '계약직', stability: 0.6 },
+      business: { label: '자영업', stability: 0.55 },
+      freelance: { label: '프리랜서', stability: 0.5 },
+      none: { label: '소득 없음', stability: 0 },
+    },
+    creditLoanDsrYears: 5, // DSR 산정 시 신용대출 원금을 5년 분할상환으로 본다
+    comfortablePayRatio: 0.35, // 실수령 대비 대출 상환 편안한 상한
+    maxPayRatio: 0.45,
+    surplusGoodRatio: 0.2, // 실수령의 20% 이상 남으면 양호
+    runwayGoodMonths: 12,
+    runwayMinMonths: 6,
+  };
+
   // ── 임차 ──────────────────────────────────────────────────────────────
   const RENT = {
     renewalCap: 0.05, // 계약갱신청구권 사용 시 인상 상한
@@ -222,7 +241,7 @@
 
   return {
     asOf: '2026-09-25', EOK, MAN,
-    REGIONS, LOAN, POLICY_LOANS, PROPERTY_TYPES, PROPERTY, RECON, PRIVATE_FINANCE, ACQUISITION, BROKER, HOLDING, TRANSFER, RENT,
+    REGIONS, LOAN, POLICY_LOANS, PROPERTY_TYPES, PROPERTY, RECON, PRIVATE_FINANCE, INCOME, ACQUISITION, BROKER, HOLDING, TRANSFER, RENT,
     notes: [
       '2026-08-03 세제개편안(종부세 거주 1주택 공제 14억 등)은 국회 통과 전이며 대부분 2027년 이후 시행 예정입니다.',
       '스트레스 DSR 반영비율·정책대출 요건은 은행·상품별로 다를 수 있습니다.',

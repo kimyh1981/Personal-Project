@@ -9,7 +9,7 @@ function base(over = {}) {
   const c = {
     purpose: '거주', regionId: 'incheon', propertyType: '아파트', areaM2: 84, price: 5 * EOK,
     recentTrades: [], jeonse: null, assumeTenant: false, cash: 3 * EOK, ownedHomes: 0, willSellExisting: false,
-    annualIncome: 8000 * MAN, annualSavings: 0,
+    annualIncome: 8000 * MAN, annualSavings: 0, netMonthlyIncome: 550 * MAN, employment: 'regular',
     location: { jobCommuteMin: 30, schoolWalkMin: 5, subwayWalkMin: null, amenities: [], negatives: [] },
     recon: { target: false }, timing: { purchaseDate: '2026-11', holdingYears: null, moveInBy: null },
     loan: { rate: 0.04, termYears: 30, method: 'amortized' },
@@ -130,4 +130,9 @@ test('갭 투자 수익: 상승률이 높을수록 초과수익 증가', () => {
   assert.ok(hi.excess > lo.excess);
   assert.equal(hi.series.length, 7);
   assert.ok(Math.abs(lo.equity - (4 * EOK + 3500 * MAN)) < 1);
+});
+
+test('필수 조건: 월 실수령액·고용 형태', () => {
+  const miss = C.missing(base({ netMonthlyIncome: null, employment: null })).map((r) => r.path);
+  assert.ok(miss.includes('netMonthlyIncome') && miss.includes('employment'));
 });
