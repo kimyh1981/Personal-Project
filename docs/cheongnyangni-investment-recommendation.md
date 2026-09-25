@@ -1,5 +1,6 @@
 # 청량리 일대 10억~19억 아파트·빌라 추천 (재건축·재개발 투자 관점)
 
+> 토허제 확인: [land-transaction-permit-check.md](./land-transaction-permit-check.md)
 > 작성일: 2026-09-25 · 공개된 기사와 시세 사이트를 바탕으로 정리했습니다. 매수 전에 실거래가, 호가, 조합 공고를 반드시 직접 확인하세요. 투자 권유가 아니라 검토용 자료입니다.
 > 같은 기준으로 정리한 노량진 편: [noryangjin-investment-recommendation.md](./noryangjin-investment-recommendation.md)
 
