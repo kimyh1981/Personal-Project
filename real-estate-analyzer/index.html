@@ -4,7 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>실거주 매수 판단기</title>
-<meta name="theme-color" content="#1f6f5c">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="매수판단">
@@ -12,8 +14,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -29,8 +33,8 @@
 
   <div class="layout" data-view="results">
     <form id="inputs" class="panel" autocomplete="off">
-      <fieldset>
-        <legend>목적·시기</legend>
+      <fieldset data-footer="목적에 따라 대출·세금·실거주 의무와 평가 기준이 달라집니다.">
+        <legend><span class="ico" style="--ico:#007aff" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></span><span>목적·시기</span></legend>
         <label class="f wide">매수 목적
           <select id="purpose">
             <option value="거주" selected>거주 (내가 들어가 산다)</option>
@@ -45,8 +49,8 @@
         </div>
       </fieldset>
 
-      <fieldset>
-        <legend>매수할 집</legend>
+      <fieldset data-footer="금액은 만원 단위입니다. 지번 주소를 넣으면 필지의 토지거래허가·정비구역을 최신 공공데이터로 확인합니다.">
+        <legend><span class="ico" style="--ico:#ff9500" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6.5 9.5V20h11V9.5"/><path d="M10 20v-5h4v5"/></svg></span><span>매수할 집</span></legend>
         <label class="f wide">지역
           <select id="regionId"></select>
           <span class="hint" id="regionHint"></span>
@@ -71,8 +75,8 @@
         <label class="f wide">같은 평형 최근 실거래가 <span class="unit">만원, 쉼표로 구분 · 비우면 실거래가 탭 데이터 사용</span><input id="recentTrades" type="text" inputmode="numeric" value="98000, 101000, 99500" data-required></label>
       </fieldset>
 
-      <fieldset>
-        <legend>입지</legend>
+      <fieldset data-footer="통근·학교 시간은 거주 점수에, 역까지 거리와 호재는 투자 점수에 반영됩니다.">
+        <legend><span class="ico" style="--ico:#34c759" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0113 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg></span><span>입지</span></legend>
         <label class="f">역까지 도보 <span class="unit">분</span><input id="subwayWalkMin" type="number" step="1" value="7" data-required></label>
         <label class="f">업무지구 통근 <span class="unit">분</span><input id="jobCommuteMin" type="number" step="1" value="35" data-required></label>
         <label class="f">초등학교 도보 <span class="unit">분</span><input id="schoolWalkMin" type="number" step="1" value="6" data-required></label>
@@ -80,8 +84,8 @@
         <label class="f wide">악재·혐오시설 <span class="unit">쉼표로 구분</span><input id="negatives" type="text" value=""></label>
       </fieldset>
 
-      <fieldset>
-        <legend>우리 가구</legend>
+      <fieldset data-footer="연 순저축은 재건축 이주비·분담금을 마련할 수 있는지 볼 때 씁니다.">
+        <legend><span class="ico" style="--ico:#ff2d55" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9.5" r="2.3"/><path d="M16 14.2c2.3.2 4 1.8 4.5 4.3"/></svg></span><span>우리 가구</span></legend>
         <label class="f wide">주택 보유 상태
           <select id="buyerType">
             <option value="first">생애최초 (평생 무주택)</option>
@@ -104,8 +108,8 @@
         </div>
       </fieldset>
 
-      <fieldset>
-        <legend>주택담보대출</legend>
+      <fieldset data-footer="DSR은 실제 금리에 스트레스 가산금리를 더한 심사금리로 계산합니다.">
+        <legend><span class="ico" style="--ico:#5856d6" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 9L12 4l8.5 5M5 9.5v8M9.5 9.5v8M14.5 9.5v8M19 9.5v8M3.5 20h17"/></svg></span><span>주택담보대출</span></legend>
         <label class="f">대출 금리 <span class="unit">%</span><input id="rate" type="number" step="0.05" value="4.2"></label>
         <label class="f">만기 <span class="unit">년</span><input id="termYears" type="number" step="1" value="30"></label>
         <label class="f">금리 유형
@@ -131,8 +135,8 @@
         <label class="f">희망 대출액 <span class="unit">만원</span><input id="loanWanted" type="number" step="100" placeholder="비우면 최대"></label>
       </fieldset>
 
-      <fieldset>
-        <legend>예산 밖 자금 (개인 차입·근저당)</legend>
+      <fieldset data-footer="금융권 대출 규제 밖이지만 세법·이자제한법·자금조달계획서 검증을 받습니다.">
+        <legend><span class="ico" style="--ico:#af52de" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M9 9.5c.6-1 1.7-1.5 3-1.5 1.8 0 3 .9 3 2.2 0 3-6 1.6-6 4.6 0 1.3 1.2 2.2 3 2.2 1.3 0 2.4-.5 3-1.5M12 6v2M12 16v2"/></svg></span><span>예산 밖 자금 (개인 차입·근저당)</span></legend>
         <div class="checks wide">
           <label><input id="usePrivate" type="checkbox"> 금융권 한도 밖 개인 자금을 더해 본다</label>
         </div>
@@ -159,8 +163,8 @@
         </div>
       </fieldset>
 
-      <fieldset>
-        <legend>재건축·정비사업</legend>
+      <fieldset data-footer="구역명으로 검색하면 공공데이터의 추진 단계와 날짜가 채워집니다.">
+        <legend><span class="ico" style="--ico:#a2845e" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 21V5l12 3M6 8h12M14 8v5M12.5 13h3v2h-3zM4 21h6"/></svg></span><span>재건축·정비사업</span></legend>
         <div class="checks wide">
           <label><input id="reconTarget" type="checkbox"> 재건축 대상 단지 (이주비 활용 분석)</label>
         </div>
@@ -191,8 +195,8 @@
         </div>
       </fieldset>
 
-      <fieldset>
-        <legend>매수하지 않으면 (임차 대안)</legend>
+      <fieldset data-footer="같은 집에 전세나 월세로 살 때와 순자산을 비교합니다.">
+        <legend><span class="ico" style="--ico:#30b0c7" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M14 9l1.5 1.5"/></svg></span><span>매수하지 않으면 (임차 대안)</span></legend>
         <label class="f">보증금 <span class="unit">만원</span><input id="rentDeposit" type="number" step="100" value="60000"></label>
         <label class="f">월세 <span class="unit">만원</span><input id="rentMonthly" type="number" step="5" value="0"></label>
         <label class="f">전세대출 <span class="unit">만원</span><input id="rentLoan" type="number" step="100" value="0"></label>
@@ -202,8 +206,8 @@
         </div>
       </fieldset>
 
-      <fieldset>
-        <legend>미래 가정</legend>
+      <fieldset data-footer="몬테카를로 분석은 변동성만큼 흔들린 무작위 경로 800개로 확률을 냅니다.">
+        <legend><span class="ico" style="--ico:#8e8e93" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 19h16M6 15l4-4 3 3 5-6"/><path d="M15 8h3v3"/></svg></span><span>미래 가정</span></legend>
         <label class="f">보유 기간 <span class="unit">년</span><input id="years" type="number" step="1" min="1" max="30" value="10" data-required></label>
         <label class="f">연 집값 상승률 <span class="unit">%</span><input id="appreciation" type="number" step="0.1" value="3"></label>
         <label class="f">집값 변동성 <span class="unit">%</span><input id="appreciationVol" type="number" step="0.5" value="7"></label>
