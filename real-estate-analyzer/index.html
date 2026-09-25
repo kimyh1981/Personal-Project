@@ -124,6 +124,34 @@
       </fieldset>
 
       <fieldset>
+        <legend>예산 밖 자금 (개인 차입·근저당)</legend>
+        <div class="checks wide">
+          <label><input id="usePrivate" type="checkbox"> 금융권 한도 밖 개인 자금을 더해 본다</label>
+        </div>
+        <div id="privateFields" class="subgrid wide" hidden>
+          <label class="f wide">방식
+            <select id="privateType">
+              <option value="seller">매도인 잔금 유예 + 근저당</option>
+              <option value="family">가족 등 특수관계인 차입 + 근저당</option>
+              <option value="other">지인·기타 개인 차입 + 근저당</option>
+            </select>
+          </label>
+          <label class="f">차입 원금 <span class="unit">만원</span><input id="privatePrincipal" type="number" step="100" value="30000"></label>
+          <label class="f">연 이자율 <span class="unit">%</span><input id="privateRate" type="number" step="0.1" value="4.6"></label>
+          <label class="f">만기 (일시상환) <span class="unit">년</span><input id="privateTerm" type="number" step="1" value="3"></label>
+          <label class="f">상환 재원
+            <select id="privateRepay">
+              <option value="">정하지 않음</option>
+              <option value="저축">연 저축</option>
+              <option value="기존주택 매도">기존 주택 매도 대금</option>
+              <option value="대환">금융권 대출로 대환</option>
+              <option value="매도">이 집을 팔아서</option>
+            </select>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset>
         <legend>재건축·정비사업</legend>
         <div class="checks wide">
           <label><input id="reconTarget" type="checkbox"> 재건축 대상 단지 (이주비 활용 분석)</label>

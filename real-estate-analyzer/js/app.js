@@ -82,6 +82,8 @@
       years: Math.min(30, Math.max(1, Math.round(n('years')))), appreciation: n('appreciation', 0.01), appreciationVol: n('appreciationVol', 0.01),
       rentGrowth: n('rentGrowth', 0.01), invReturn: n('invReturn', 0.01), invVol: n('invVol', 0.01),
       maintenanceRate: n('maintenanceRate', 0.01), moveCost: n('moveCost', MAN), bondDiscount: n('bondDiscount', 0.01),
+      usePrivate: !!val('usePrivate'), privateType: val('privateType'), privatePrincipal: n('privatePrincipal', MAN),
+      privateRate: n('privateRate', 0.01), privateTerm: n('privateTerm'), privateRepay: val('privateRepay'),
       vat: !!val('vat'), reform2026: !!val('reform2026'), useRenewalRight: !!val('useRenewalRight'), rateChange: n('rateChange', 0.01),
     };
   }
@@ -240,9 +242,16 @@
     const monthlyPayment = i.method === 'equalPrincipal'
       ? (E.schedule(loan, i.rate, termYears, 'equalPrincipal').payment[0] || 0)
       : E.pmt(loan, i.rate, termYears * 12);
+    const pf = i.usePrivate ? E.privateFinance({
+      type: i.privateType, principal: i.privatePrincipal, rate: i.privateRate, termYears: i.privateTerm,
+      bondDiscount: i.bondDiscount, annualIncome: i.annualIncome, repaymentSource: i.privateRepay,
+    }) : null;
+    const privateCash = pf && pf.principal ? pf.principal - pf.setup : 0;
+    const privateLoan = pf && pf.principal ? { principal: pf.principal, rate: pf.rate, termYears: pf.termYears, setup: pf.setup } : null;
     const need = i.price - loan - tenantDeposit + closing.total + (livesIn ? i.moveCost : 0);
-    const fundingGap = need - i.cash;
-    const leftover = i.cash - need;
+    const fundingGap = need - i.cash - privateCash;
+    const leftover = i.cash + privateCash - need;
+    const privateUsed = pf && need > i.cash ? Math.min(pf.principal, need - i.cash + (pf.setup || 0)) : 0;
     const monthlyIncome = i.annualIncome / 12;
     const stress = E.stressTest({ loan, rate: i.rate, termYears, method: i.method, monthlyIncome, price: i.price });
 
@@ -252,6 +261,7 @@
       maintenanceRate: i.maintenanceRate, appreciation: i.appreciation, invReturn: i.invReturn,
       rentDeposit: i.rentDeposit, rentMonthly: i.rentMonthly, rentLoan: Math.min(i.rentLoan, i.rentDeposit), rentLoanRate: i.rentLoanRate,
       rentGrowth: i.rentGrowth, useRenewalRight: i.useRenewalRight, moveCost: i.moveCost, oneHouse: hh.oneHouse, age: i.age, reform2026: i.reform2026, vat: i.vat,
+      privateLoan,
     };
     const base = E.simulate(sim);
     const breakeven = livesIn ? E.breakevenAppreciation(sim) : undefined;
@@ -260,6 +270,7 @@
       price: i.price, deposit: tenantDeposit, loan, rate: i.rate, termYears, method: i.method, closing: closing.total,
       years: i.years, appreciation: i.appreciation, rentGrowth: i.rentGrowth, useRenewalRight: i.useRenewalRight, invReturn: i.invReturn,
       regionId: i.regionId, homesAfter: hh.homesAfter, oneHouse: hh.oneHouse, publicRatio: i.publicRatio, age: i.age, reform2026: i.reform2026, vat: i.vat,
+      privateLoan,
     });
     const policyLoans = E.policyLoanEligibility({
       price: i.price, householdIncome: i.annualIncome, netAsset: i.cash, areaM2: i.areaM2, buyerType: i.buyerType,
@@ -268,13 +279,19 @@
     const afford = E.maxAffordablePrice({
       regionId: i.regionId, buyerType: i.buyerType, annualIncome: i.annualIncome, existingAnnualDebtService: i.existingDebt,
       rate: i.rate, termYears: i.termYears, method: i.method, rateType: i.rateType, lender: i.lender,
-      cash: i.cash, moveCost: i.moveCost, homesAfter: hh.homesAfter, temporaryTwo: hh.temporaryTwo, livesIn, propertyType: i.propertyType,
+      cash: i.cash, moveCost: i.moveCost, homesAfter: hh.homesAfter, temporaryTwo: hh.temporaryTwo, livesIn, propertyType: i.propertyType, extraCash: privateCash,
       areaOver85: i.areaM2 > 85, publicRatio: i.publicRatio, bondDiscount: i.bondDiscount, vat: i.vat,
     });
+    const affordBank = privateCash ? E.maxAffordablePrice({
+      regionId: i.regionId, buyerType: i.buyerType, annualIncome: i.annualIncome, existingAnnualDebtService: i.existingDebt,
+      rate: i.rate, termYears: i.termYears, method: i.method, rateType: i.rateType, lender: i.lender,
+      cash: i.cash, moveCost: i.moveCost, homesAfter: hh.homesAfter, temporaryTwo: hh.temporaryTwo, livesIn, propertyType: i.propertyType,
+      areaOver85: i.areaM2 > 85, publicRatio: i.publicRatio, bondDiscount: i.bondDiscount, vat: i.vat,
+    }) : null;
     const sens = livesIn && base.feasible ? E.sensitivity(sim) : null;
     const jeonseRatio = i.jeonsePrice > 0 ? i.jeonsePrice / i.price : null;
     const assess = COND.assess(cond, {
-      price: i.price, loanUsed: loan, tenantDeposit, requiredCash: need, surplus: i.cash - need,
+      price: i.price, loanUsed: loan, tenantDeposit, requiredCash: need, surplus: i.cash + privateCash - need,
       totalCost: i.price + closing.total, dsr: i.annualIncome > 0 ? (monthlyPayment * 12 + i.existingDebt) / i.annualIncome : 0,
       loanBlockedReason: limit.blockedReason, taxHeavy: closing.tax.heavy, taxRate: closing.tax.rate, homesAfter: hh.homesAfter,
     });
@@ -285,12 +302,18 @@
       breakeven, expectedAppreciation: i.appreciation,
       emergencyMonths: i.monthlyLiving > 0 ? Math.max(0, leftover) / i.monthlyLiving : 99,
       jeonseRatio, pir: i.annualIncome > 0 ? i.price / i.annualIncome : null,
-      gapExcess: gap ? gap.excess : null, gapEquity: gap ? gap.equity : null,
+      gapExcess: gap ? gap.excess : null, gapEquity: gap ? gap.equity : null, privateUsed,
     });
+    // 개인 차입 점검 항목을 조건 판정에 합친다
+    if (pf) {
+      for (const ch of pf.checks) assess.flags.push({ level: ch.level, category: '예산 밖 자금', message: ch.message });
+      if (pf.checks.some((ch) => ch.level === 'block')) assess.verdict = '불가';
+      else if (assess.verdict === '진행가능' && pf.checks.some((ch) => ch.level === 'warn')) assess.verdict = '조건부';
+    }
     // 필수 조건 점검의 차단 항목은 점수와 무관하게 매수 불가
     if (assess.verdict === '불가') { v.label = '매수 불가 — 조건 차단'; v.tone = 'critical'; }
     else if (v.tone === 'good' && assess.flags.some((f) => f.level === 'warn' && f.category !== '규제')) { v.label = '조건부 검토'; v.tone = 'warning'; }
-    return { i, hh, r, cond, livesIn, tenantDeposit, gap, assess, afford, sens, limit, loan, termYears, publicPrice, closing, holding, monthlyPayment, need, fundingGap, leftover, stress, sim, base, breakeven, mc, policyLoans, jeonseRatio, v };
+    return { i, hh, r, cond, livesIn, tenantDeposit, gap, assess, pf, privateCash, privateUsed, affordBank, afford, sens, limit, loan, termYears, publicPrice, closing, holding, monthlyPayment, need, fundingGap, leftover, stress, sim, base, breakeven, mc, policyLoans, jeonseRatio, v };
   }
 
   // ── 렌더 ──────────────────────────────────────────────────────────────
@@ -313,6 +336,25 @@
     const hard = a.flags.filter((f) => f.level !== 'info');
     const list = hard.length ? `<ul class="flags" style="margin-top:12px">${hard.map((f) => `<li>${chip(FLAG[f.level][0], FLAG[f.level][1])}<span class="cat">${esc(f.category)}</span><span class="msg">${esc(f.message)}</span></li>`).join('')}</ul>` : '';
     return (scores ? `<div class="scores">${scores}<span>조건 점검 ${a.flags.filter((f) => f.level === 'block').length}건 차단 · ${a.flags.filter((f) => f.level === 'warn').length}건 주의</span></div>` : '') + list;
+  }
+
+  function privateCard(c) {
+    const f = c.pf;
+    if (!f || !f.principal) return '';
+    const lv = { block: ['critical', '차단'], warn: ['warning', '주의'], info: ['neutral', '정보'] };
+    return `<div class="card">
+      <h3>예산 밖 자금 — ${esc(P.PRIVATE_FINANCE.types[f.type])}</h3>
+      <p class="muted">금융회사 대출이 아니라 LTV·DSR·주담대 한도는 적용되지 않습니다. 대신 세법과 자금출처 검증을 받습니다.</p>
+      <div class="tbl-wrap"><table><tbody>
+        <tr><td>차입 원금</td><td class="n">${esc(won(f.principal))}</td></tr>
+        <tr><td>채권최고액 (원금 × ${P.PRIVATE_FINANCE.maxAmountRatio * 100}%)</td><td class="n">${esc(won(f.maxAmount))}</td></tr>
+        <tr><td>설정 비용 (등록면허세·교육세·채권·법무사)</td><td class="n">${esc(won(f.setup))}</td></tr>
+        <tr><td>연 이자 (${pct(f.rate)})</td><td class="n">${esc(won(f.annualInterest))}</td></tr>
+        <tr class="hl"><td>${f.termYears}년 뒤 일시상환</td><td class="n">${esc(won(f.principal))}</td></tr>
+        ${c.privateUsed ? `<tr><td>이번 매수에 실제로 필요한 개인 자금</td><td class="n">${esc(won(c.privateUsed))}</td></tr>` : ''}
+      </tbody></table></div>
+      <ul class="flags">${f.checks.map((ch) => `<li>${chip(lv[ch.level][0], lv[ch.level][1])}<span class="cat">개인 차입</span><span class="msg">${esc(ch.message)}</span></li>`).join('')}</ul>
+    </div>`;
   }
 
   // ── 조건 점검 ─────────────────────────────────────────────────────────
@@ -365,8 +407,9 @@
             <tr><td>취득 부대비용</td><td class="n">${esc(won(c.closing.total))}</td></tr>
             ${c.livesIn ? `<tr><td>이사비</td><td class="n">${esc(won(c.i.moveCost))}</td></tr>` : ''}
             <tr><td>− 주택담보대출</td><td class="n">${esc(won(-c.loan))}</td></tr>
+            ${c.privateCash ? `<tr><td>− 개인 차입 (설정비 차감, 예산 밖)</td><td class="n">${esc(won(-c.privateCash))}</td></tr>` : ''}
             ${c.tenantDeposit ? `<tr><td>− 전세보증금 (세입자)</td><td class="n">${esc(won(-c.tenantDeposit))}</td></tr>` : ''}
-            <tr class="total"><td>필요 자기자금</td><td class="n">${esc(won(c.need))}</td></tr>
+            <tr class="total"><td>필요 자기자금</td><td class="n">${esc(won(c.need - (c.privateCash || 0)))}</td></tr>
             <tr><td>확보 자금</td><td class="n">${esc(won(c.i.cash))}</td></tr>
             <tr class="hl"><td>${c.fundingGap > 0 ? '부족' : '여유'}</td><td class="n ${c.fundingGap > 0 ? 'neg' : 'pos'}">${esc(won(Math.abs(c.fundingGap)))}</td></tr>
           </tbody></table></div>
@@ -463,7 +506,7 @@
   function renderKpis(c) {
     const k = [
       { k: '대출 가능액', v: won(c.loan), s: `한도 결정: ${c.limit.binding.label}` },
-      { k: '필요 자기자본', v: won(c.need), s: c.fundingGap > 0 ? `${won(c.fundingGap)} 부족` : `여유 ${won(c.leftover)}` },
+      { k: '필요 자기자본', v: won(c.need - (c.privateCash || 0)), s: c.fundingGap > 0 ? `${won(c.fundingGap)} 부족` : c.privateUsed ? `개인 차입 ${won(c.privateUsed)}로 채움 (예산 밖)` : `여유 ${won(c.leftover)}` },
       { k: '월 상환액 (첫 달)', v: won(c.monthlyPayment), s: c.i.annualIncome > 0 ? `월 소득의 ${pct(c.monthlyPayment / (c.i.annualIncome / 12))}` : '소득 없음' },
       { k: '취득 부대비용', v: won(c.closing.total), s: `매매가의 ${pct(c.closing.total / c.i.price, 2)}` },
     ];
@@ -491,8 +534,10 @@
         <div class="card">
           <h3>이 조건으로 살 수 있는 최고 가격</h3>
           <p class="big">${esc(won(c.afford.price))}${c.afford.capped ? ' 이상' : ''}</p>
-          <p class="muted">보유 현금 ${esc(won(c.i.cash))} + 대출 ${esc(won(c.afford.loan))} − 취득 부대비용·이사비. 지금 매매가는 이 한도의 ${pct(c.i.price / c.afford.price, 0)}입니다.</p>
+          <p class="muted">보유 현금 ${esc(won(c.i.cash))} + 대출 ${esc(won(c.afford.loan))}${c.privateCash ? ` + 개인 차입 ${esc(won(c.privateCash))}` : ''} − 취득 부대비용·이사비. 지금 매매가는 이 한도의 ${pct(c.i.price / c.afford.price, 0)}입니다.</p>
+          ${c.affordBank ? `<p class="muted">금융권 대출만 쓰면 ${esc(won(c.affordBank.price))}까지입니다. 그 위 ${esc(won(c.afford.price - c.affordBank.price))} 구간은 개인 차입에 기대는 예산 밖 영역입니다.</p>` : ''}
         </div>
+        ${privateCard(c)}
         <div class="card">
           <h3>대출 조건·의무</h3>
           <ul class="plain">${L.conditions.map((x) => `<li>${esc(x)}</li>`).join('') || '<li>특이 조건 없음</li>'}</ul>
@@ -913,6 +958,8 @@
       ['대출 가능액', (r) => r.loan, won, 'high'],
       ['필요 자기자본', (r) => r.need, won, 'low'],
       ['자금 여유(부족)', (r) => -r.fundingGap, (x) => won(x, { sign: true }), 'high'],
+      ['개인 차입 필요 (예산 밖)', (r) => r.privateUsed || 0, (x) => (x ? won(x) : '없음'), 'low'],
+      ['투자 점수', (r) => (r.assess.scores['투자'] ? r.assess.scores['투자'].score : NaN), (x) => (isFinite(x) ? `${x}점` : '—'), 'high'],
       ['월 상환액', (r) => r.monthlyPayment, won, 'low'],
       ['월 소득 대비 상환', (r) => r.monthlyPayment / (r.i.annualIncome / 12), (x) => pct(x), 'low'],
       ['금리 +2%p 부담률', (r) => r.stress.rateShocks[2].burden, (x) => pct(x), 'low'],
@@ -952,6 +999,7 @@
     const permit = r.landPermit && P.PROPERTY.landPermitTypes.includes(i.propertyType);
     $('regionHint').textContent = [r.regulated ? '규제지역' : '비규제', r.capital ? '수도권' : '지방', permit ? '토지거래허가구역' : null].filter(Boolean).join(' · ');
     $('reconFields').hidden = !V.reconTarget;
+    $('privateFields').hidden = !V.usePrivate;
     const list = COND.checklist(cond);
     const errors = COND.valueErrors(cond);
     const missingIds = new Set(list.filter((x) => !x.done).map((x) => REQ_INPUT[x.path]));

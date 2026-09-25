@@ -352,6 +352,45 @@
     return res;
   }
 
+  // ── 예산 밖 자금: 개인 차입·근저당 ─────────────────────────────────────
+  /**
+   * i: type(seller|family|other), principal, rate, termYears, bondDiscount, annualIncome, repaymentSource
+   * 반환: 설정 비용, 연 이자, 세무·법률 점검 항목 (level: block|warn|info)
+   */
+  function privateFinance(i) {
+    const F = P.PRIVATE_FINANCE;
+    const principal = Math.max(0, i.principal || 0);
+    const out = { principal, rate: i.rate || 0, termYears: i.termYears || 0, type: i.type, maxAmount: 0, setup: 0, annualInterest: 0, checks: [] };
+    if (!principal) return out;
+    const check = (level, message) => out.checks.push({ level, message });
+    const maxAmount = principal * F.maxAmountRatio;
+    const regTax = maxAmount * F.registrationTaxRate;
+    const edu = regTax * F.registrationEduRate;
+    const bond = maxAmount >= F.bondMinAmount ? maxAmount * F.bondRate * (i.bondDiscount ?? 0.08) : 0;
+    Object.assign(out, {
+      maxAmount, registrationTax: floorWon(regTax), education: floorWon(edu), bond: Math.round(bond), legalFee: F.legalFee,
+      annualInterest: principal * out.rate,
+    });
+    out.setup = out.registrationTax + out.education + out.bond + out.legalFee;
+
+    if (out.rate > F.interestCap) check('block', `연 ${(out.rate * 100).toFixed(1)}%는 이자제한법 최고이자율 ${F.interestCap * 100}%를 넘습니다. 초과분은 무효이고 처벌 대상이 될 수 있습니다.`);
+    if (i.type === 'family') {
+      const benefit = principal * Math.max(0, F.relatedPartyRate - out.rate);
+      out.giftBenefit = benefit;
+      out.safePrincipalAtRate = out.rate < F.relatedPartyRate ? F.giftThresholdPerYear / (F.relatedPartyRate - out.rate) : Infinity;
+      if (benefit >= F.giftThresholdPerYear) check('warn', `적정이자율 ${F.relatedPartyRate * 100}%보다 낮아 연 ${Math.round(benefit / 1e4).toLocaleString()}만원의 이익이 생깁니다. 연 1천만원 이상이면 이 이익 전체에 증여세가 과세될 수 있습니다 (이 금리에서 안전한 원금 한도 약 ${Math.round(out.safePrincipalAtRate / 1e6) / 100}억원).`);
+      check('warn', '가족 간 차입은 차용증·공증·이자 실제 지급(계좌이체)·상환 기록이 없으면 증여로 봅니다. 국세청 자금출처 조사 대상이 되기 쉽습니다.');
+    }
+    if (i.type === 'seller') check('info', '매도인 잔금 유예는 잔금 일부를 나중에 주는 대신 매도인이 근저당을 잡는 방식입니다. 유예 기간·이자·기한이익상실 조건을 계약서에 명시하세요.');
+    if (out.rate > 0) check('info', `대여자가 받는 이자는 비영업대금 이익(원천징수 ${(F.withholdingRate * 100).toFixed(1)}%)으로 과세됩니다. 이자 지급 때 원천징수·신고 의무가 있는지 세무사와 확인하세요.`);
+    check('warn', '자금조달계획서에 차입금(대여자·금액·조건)을 적어야 하고, 규제지역·토지거래허가구역은 증빙을 함께 냅니다. 허가·검증 과정에서 거래가 막힐 수 있습니다.');
+    check('info', '금융권 1순위 주담대와 함께 쓰면 개인 근저당은 후순위가 됩니다. 은행 대출 약정이 후순위 설정을 제한하는지 확인하세요.');
+    if (out.termYears > 0 && !i.repaymentSource) check('warn', `만기 ${out.termYears}년에 원금 ${Math.round(principal / 1e4).toLocaleString()}만원을 한 번에 갚을 재원을 정하지 않았습니다. 못 갚으면 담보권 실행(경매)으로 이어질 수 있습니다.`);
+    if (i.annualIncome > 0 && out.annualInterest / i.annualIncome > 0.2) check('warn', `개인 차입 이자만 연소득의 ${(out.annualInterest / i.annualIncome * 100).toFixed(0)}%입니다. 은행 DSR에는 잡히지 않지만 실제 상환 부담입니다.`);
+    check('info', F.note);
+    return out;
+  }
+
   // ── 매수 vs 임차 시뮬레이션 ───────────────────────────────────────────
   function mulberry32(seed) {
     let a = seed >>> 0;
@@ -385,11 +424,15 @@
     const r = region(s.regionId);
 
     const buyUpfront = s.price - s.loan + s.closing;
+    // 개인 차입: 시작 때 원금(설정비 차감)이 들어오고, 만기까지 이자만 내다 만기에 원금을 한 번에 갚는다
+    const pv0 = s.privateLoan && s.privateLoan.principal > 0 ? s.privateLoan : null;
+    const pvMonths = pv0 ? Math.round((pv0.termYears || s.years) * 12) : 0;
+    let pvOutstanding = pv0 ? pv0.principal : 0;
     const rentBroker = brokerFee(leaseBase(s.rentDeposit, s.rentMonthly), 'lease', s.vat);
     const useRenewal = s.useRenewalRight !== false;
     const rentUpfront = s.rentDeposit - s.rentLoan + rentBroker + s.moveCost;
 
-    let buyPort = s.cash - buyUpfront - s.moveCost;
+    let buyPort = s.cash - buyUpfront - s.moveCost + (pv0 ? pv0.principal - (pv0.setup || 0) : 0);
     let rentPort = s.cash - rentUpfront;
     let price = s.price;
     let deposit = s.rentDeposit;
@@ -397,7 +440,7 @@
     let rentLoan = s.rentLoan;
     let rentIndex = 1; // 최초 계약 대비 임차료 배수
     let yearHolding = 0;
-    const series = [{ year: 0, buy: s.cash - buyUpfront - s.moveCost + (s.price - s.loan), rent: s.cash - rentUpfront + (s.rentDeposit - s.rentLoan), price }];
+    const series = [{ year: 0, buy: buyPort + (s.price - s.loan) - pvOutstanding, rent: s.cash - rentUpfront + (s.rentDeposit - s.rentLoan), price }];
     let buyHousingCost = 0, rentHousingCost = 0;
 
     for (let m = 0; m < months; m++) {
@@ -432,19 +475,21 @@
 
       const mortgage = m < sch.payment.length ? sch.payment[m] : 0;
       const mortgageInterest = m < sch.interest.length ? sch.interest[m] : 0;
-      const buyOut = mortgage + yearHolding / 12 + (price * s.maintenanceRate) / 12;
+      const pvInterest = pvOutstanding * (pv0 ? pv0.rate : 0) / 12;
+      const buyOut = mortgage + yearHolding / 12 + (price * s.maintenanceRate) / 12 + pvInterest;
       const rentOut = monthly + (rentLoan * s.rentLoanRate) / 12 + (deposit * P.RENT.guaranteeFeeRate) / 12;
-      buyHousingCost += mortgageInterest + yearHolding / 12 + (price * s.maintenanceRate) / 12;
+      buyHousingCost += mortgageInterest + yearHolding / 12 + (price * s.maintenanceRate) / 12 + pvInterest;
       rentHousingCost += rentOut;
       const budget = Math.max(buyOut, rentOut);
 
       buyPort = buyPort * (1 + im) + (budget - buyOut);
       rentPort = rentPort * (1 + im) + (budget - rentOut);
       price *= 1 + gm;
+      if (pvOutstanding && m + 1 === pvMonths) { buyPort -= pvOutstanding; pvOutstanding = 0; } // 만기 일시상환
 
       if ((m + 1) % 12 === 0) {
         const bal = m < sch.balance.length ? sch.balance[m] : 0;
-        series.push({ year: (m + 1) / 12, buy: buyPort + price - bal, rent: rentPort + deposit - rentLoan, price });
+        series.push({ year: (m + 1) / 12, buy: buyPort + price - bal - pvOutstanding, rent: rentPort + deposit - rentLoan, price });
       }
     }
 
@@ -455,13 +500,14 @@
       yearsHeld: s.years, yearsResided: s.yearsResided ?? s.years, oneHouse: s.oneHouse,
       regulatedAtPurchase: r.regulated, homesAtSale: s.homesAfter, regulatedAtSale: r.regulated,
     });
-    const buyFinal = buyPort + price - balance - sellFee - cgt.total;
+    const buyFinal = buyPort + price - balance - sellFee - cgt.total - pvOutstanding;
     const rentFinal = rentPort + deposit - rentLoan;
     return {
       buyFinal, rentFinal, diff: buyFinal - rentFinal, series,
       salePrice: price, sellFee, cgt, balance, buyUpfront, rentUpfront,
       buyHousingCost, rentHousingCost,
-      feasible: buyUpfront + s.moveCost <= s.cash && rentUpfront <= s.cash,
+      feasible: buyUpfront + s.moveCost <= s.cash + (pv0 ? pv0.principal - (pv0.setup || 0) : 0) && rentUpfront <= s.cash,
+      privateOutstandingAtEnd: pvOutstanding,
     };
   }
 
@@ -473,7 +519,10 @@
   function gapInvestment(s) {
     const r = region(s.regionId);
     const im = s.invReturn;
-    const equity = s.price - s.deposit - (s.loan || 0) + s.closing;
+    const pv0 = s.privateLoan && s.privateLoan.principal > 0 ? s.privateLoan : null;
+    const equity = s.price - s.deposit - (s.loan || 0) + s.closing - (pv0 ? pv0.principal - (pv0.setup || 0) : 0);
+    let pvOutstanding = pv0 ? pv0.principal : 0;
+    const pvYears = pv0 ? pv0.termYears || s.years : 0;
     let price = s.price, deposit = s.deposit, index = 1;
     let alt = equity; // 같은 돈을 대안 투자에 넣었을 때
     let side = 0; // 투자 쪽 부수 현금흐름의 누적 (보증금 증액 수령 +, 보유세·이자 −), 대안 수익률로 복리
@@ -483,7 +532,8 @@
       const pp = price * (s.publicRatio ?? P.HOLDING.publicPriceRatio);
       const tax = holdingTax({ publicPrice: pp, oneHouse: s.oneHouse, homes: s.homesAfter, age: (s.age || 40) + y, yearsHeld: y, resident: false, reform2026: s.reform2026 }).total;
       const debt = sch.payment.slice(y * 12, y * 12 + 12).reduce((a, b) => a + b, 0);
-      side = side * (1 + im) - tax - debt;
+      side = side * (1 + im) - tax - debt - pvOutstanding * (pv0 ? pv0.rate : 0);
+      if (pvOutstanding && y + 1 === pvYears) { side -= pvOutstanding; pvOutstanding = 0; }
       alt *= 1 + im;
       price *= 1 + s.appreciation;
       if ((y + 1) % 2 === 0 && y + 1 < s.years) {
@@ -495,7 +545,7 @@
         deposit = nd;
       }
       const bal = sch.balance[Math.min(sch.balance.length - 1, (y + 1) * 12 - 1)] || 0;
-      series.push({ year: y + 1, invest: price - deposit - bal + side, alt });
+      series.push({ year: y + 1, invest: price - deposit - bal + side - pvOutstanding, alt });
     }
     const sellFee = brokerFee(price, 'sale', s.vat);
     const cgt = capitalGainsTax({
@@ -503,7 +553,7 @@
       oneHouse: s.oneHouse, regulatedAtPurchase: r.regulated, homesAtSale: s.homesAfter, regulatedAtSale: r.regulated,
     });
     const bal = s.years * 12 <= sch.balance.length ? sch.balance[s.years * 12 - 1] || 0 : 0;
-    const final = price - sellFee - cgt.total - deposit - bal + side;
+    const final = price - sellFee - cgt.total - deposit - bal + side - pvOutstanding;
     series[series.length - 1].invest = final;
     return {
       equity, final, alt, excess: final - alt, cgt, sellFee, salePrice: price, series,
@@ -568,7 +618,7 @@
     const need = (price) => {
       const loan = loanLimit({ ...i, price }).amount;
       const closing = closingCosts({ ...i, price, firstTime: i.buyerType === 'first', publicPrice: price * (i.publicRatio ?? P.HOLDING.publicPriceRatio) }).total;
-      return { loan, gap: price - loan + closing + (i.moveCost || 0) - i.cash };
+      return { loan, gap: price - loan + closing + (i.moveCost || 0) - i.cash - (i.extraCash || 0) };
     };
     let lo = 0, hi = Math.max(1 * EOK, i.cash * 20);
     if (need(hi).gap <= 0) return { price: hi, loan: need(hi).loan, capped: true };
@@ -687,6 +737,7 @@
     const pct = (x) => (x * 100).toFixed(1) + '%';
 
     if (ctx.fundingGap > 0) add('funding', '자금 조달', 'critical', `자기자본이 ${Math.round(ctx.fundingGap / 1e4).toLocaleString()}만원 부족`);
+    else if (ctx.privateUsed > 0) add('funding', '자금 조달', 'warning', `예산 밖 — 개인 차입 ${Math.round(ctx.privateUsed / 1e4).toLocaleString()}만원을 더해 조달`);
     else add('funding', '자금 조달', 'good', '대출+보유현금으로 매수 가능');
 
     add('burden', '월 상환 부담률', ctx.burden <= 0.3 ? 'good' : ctx.burden <= 0.4 ? 'warning' : 'critical', `월 소득 대비 ${pct(ctx.burden)} (권장 30% 이하)`);
@@ -787,6 +838,6 @@
     pmt, pv, schedule, annualDebtService, loanLimit, policyLoanEligibility,
     generalAcqRate, acquisitionTax, brokerFee, leaseBase, bondCost, closingCosts,
     holdingTax, capitalGainsTax, simulate, breakevenAppreciation, monteCarlo,
-    stressTest, verdict, gapInvestment, maxAffordablePrice, sensitivity, timingCompare, parseRtmsXml, parseCsv, parseTransactions, comparables, region,
+    stressTest, verdict, gapInvestment, privateFinance, maxAffordablePrice, sensitivity, timingCompare, parseRtmsXml, parseCsv, parseTransactions, comparables, region,
   };
 });

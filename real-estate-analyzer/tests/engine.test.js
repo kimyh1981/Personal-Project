@@ -260,3 +260,37 @@ test('지역별 법정동 코드', () => {
   assert.equal(E.region('seoul-마포구').lawd, '11440');
   assert.equal(P.REGIONS.filter((r) => r.regulated && !r.lawd).length, 0);
 });
+
+test('예산 밖 자금: 근저당 설정비·적정이자·이자제한법', () => {
+  const f = E.privateFinance({ type: 'family', principal: 3 * EOK, rate: 0.02, termYears: 3, bondDiscount: 0.08, annualIncome: 1 * EOK });
+  assert.equal(f.maxAmount, 3.6 * EOK);
+  near(f.registrationTax, 72 * MAN, 10);
+  near(f.education, 14.4 * MAN, 10);
+  near(f.bond, 28.8 * MAN, 1);
+  near(f.giftBenefit, 780 * MAN, 1); // 3억 × (4.6% − 2%) = 780만 < 1천만 → 증여 추정 아님
+  assert.ok(!f.checks.some((c) => c.message.includes('증여세가 과세')));
+  const big = E.privateFinance({ type: 'family', principal: 5 * EOK, rate: 0.02, termYears: 3 });
+  assert.ok(big.checks.some((c) => c.level === 'warn' && c.message.includes('증여세가 과세'))); // 1,300만 ≥ 1천만
+  near(f.safePrincipalAtRate, 1000 * MAN / 0.026, 1);
+  const small = E.privateFinance({ type: 'family', principal: 2 * EOK, rate: 0, termYears: 3, repaymentSource: '저축' });
+  assert.ok(!small.checks.some((c) => c.message.includes('증여세가 과세')), '2억 무이자: 연 920만원 < 1천만원');
+  const usury = E.privateFinance({ type: 'other', principal: 1 * EOK, rate: 0.24, termYears: 1 });
+  assert.ok(usury.checks.some((c) => c.level === 'block'));
+  assert.equal(E.privateFinance({ type: 'seller', principal: 0 }).checks.length, 0);
+});
+
+test('예산 밖 자금: 시뮬레이션에 이자와 만기 일시상환 반영', () => {
+  const tight = { ...sim, cash: 4 * EOK, rentDeposit: 3 * EOK }; // 전세 대안은 감당 가능, 매수만 예산 밖
+  const without = E.simulate(tight);
+  assert.equal(without.feasible, false);
+  const pv = { principal: 2.5 * EOK, rate: 0.05, termYears: 3, setup: 200 * MAN };
+  const withPv = E.simulate({ ...tight, privateLoan: pv });
+  assert.equal(withPv.feasible, true);
+  assert.equal(withPv.privateOutstandingAtEnd, 0);
+  const noInterest = E.simulate({ ...tight, privateLoan: { ...pv, rate: 0 } });
+  assert.ok(noInterest.diff > withPv.diff); // 같은 예산 비교: 이자만큼 임차 쪽이 더 투자한다
+  const long = E.simulate({ ...tight, privateLoan: { ...pv, termYears: 20 } });
+  assert.equal(long.privateOutstandingAtEnd, pv.principal);
+  const i = { ...baseLoan, regionId: 'seoul-마포구', buyerType: 'nohome', cash: 4 * EOK, moveCost: 0, homesAfter: 1, publicRatio: 0.69 };
+  assert.ok(E.maxAffordablePrice({ ...i, extraCash: 2 * EOK }).price > E.maxAffordablePrice(i).price + 1.5 * EOK);
+});

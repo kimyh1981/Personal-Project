@@ -192,6 +192,27 @@
     excessProfitNote: '재건축초과이익환수(조합원 1인당 초과이익 8천만원 초과분 부과) 대상인지 확인하세요.',
   };
 
+  // ── 예산 밖 자금: 개인 간 차입·근저당 ────────────────────────────────
+  // 금융회사 대출이 아니어서 LTV·DSR·주담대 한도가 적용되지 않는다. 대신 세법·이자제한법·자금조달계획서 검증을 받는다.
+  const PRIVATE_FINANCE = {
+    types: {
+      seller: '매도인 잔금 유예 + 근저당 (매도인 금융)',
+      family: '가족 등 특수관계인 차입 + 근저당',
+      other: '지인·기타 개인 차입 + 근저당',
+    },
+    interestCap: 0.20, // 이자제한법 최고이자율
+    relatedPartyRate: 0.046, // 상증세법 적정이자율 (특수관계인)
+    giftThresholdPerYear: 1000 * MAN, // 적정이자와의 차이가 연 1천만원 이상이면 증여 추정
+    withholdingRate: 0.275, // 비영업대금 이익 원천징수 25% + 지방소득세 2.5%
+    maxAmountRatio: 1.2, // 채권최고액 = 원금 × 120% (관행)
+    registrationTaxRate: 0.002, // 근저당 설정 등록면허세 (채권최고액 기준)
+    registrationEduRate: 0.2, // 지방교육세 (등록면허세의 20%)
+    bondRate: 0.01, // 근저당 설정 국민주택채권 매입률 (채권최고액 2천만원 이상)
+    bondMinAmount: 2000 * MAN,
+    legalFee: 40 * MAN, // 법무사 수수료 추정
+    note: '2026년 7월 대통령 분당 아파트 매도 때 매수인 잔금 유예에 매도인 근저당(채권최고액 17.7억)을 설정한 사례가 알려졌습니다. 이런 개인 간 금융은 금융권 대출 규제 밖이라 "규제 우회" 논란이 있었고, 추가 규제나 자금출처 검증 강화가 나올 수 있습니다.',
+  };
+
   // ── 임차 ──────────────────────────────────────────────────────────────
   const RENT = {
     renewalCap: 0.05, // 계약갱신청구권 사용 시 인상 상한
@@ -201,7 +222,7 @@
 
   return {
     asOf: '2026-09-25', EOK, MAN,
-    REGIONS, LOAN, POLICY_LOANS, PROPERTY_TYPES, PROPERTY, RECON, ACQUISITION, BROKER, HOLDING, TRANSFER, RENT,
+    REGIONS, LOAN, POLICY_LOANS, PROPERTY_TYPES, PROPERTY, RECON, PRIVATE_FINANCE, ACQUISITION, BROKER, HOLDING, TRANSFER, RENT,
     notes: [
       '2026-08-03 세제개편안(종부세 거주 1주택 공제 14억 등)은 국회 통과 전이며 대부분 2027년 이후 시행 예정입니다.',
       '스트레스 DSR 반영비율·정책대출 요건은 은행·상품별로 다를 수 있습니다.',
