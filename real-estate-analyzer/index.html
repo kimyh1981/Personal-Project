@@ -55,6 +55,11 @@
         <label class="f">전용면적 <span class="unit">㎡</span><input id="areaM2" type="number" step="0.1" value="84" data-required></label>
         <label class="f">같은 단지 전세 시세 <span class="unit">만원</span><input id="jeonsePrice" type="number" step="100" value="60000" data-required></label>
         <label class="f">공시가격 / 시세 <span class="unit">%</span><input id="publicRatio" type="number" step="1" value="69"></label>
+        <div class="f wide live-row">
+          <label class="f" style="flex:1">지번 주소 <span class="unit">필지 규제 최신 확인</span><input id="parcelAddress" type="text" placeholder="예: 서울 마포구 아현동 777"></label>
+          <button type="button" id="landUseFetch" class="ghost">토지이용계획 조회</button>
+          <span class="hint wide" id="landUseStatus"></span>
+        </div>
         <label class="f wide">같은 평형 최근 실거래가 <span class="unit">만원, 쉼표로 구분 · 비우면 실거래가 탭 데이터 사용</span><input id="recentTrades" type="text" inputmode="numeric" value="98000, 101000, 99500" data-required></label>
       </fieldset>
 
@@ -124,13 +129,22 @@
           <label><input id="reconTarget" type="checkbox"> 재건축 대상 단지 (이주비 활용 분석)</label>
         </div>
         <div id="reconFields" class="subgrid wide" hidden>
-          <label class="f wide">정비사업 단계
+          <div class="f wide live-row">
+            <label class="f" style="flex:1">정비사업 검색 <span class="unit">서울·경기 공공데이터</span><input id="redevQuery" type="text" placeholder="구역명·단지명 (예: 임광3차)"></label>
+            <button type="button" id="redevFetch" class="ghost">최신 단계 불러오기</button>
+            <select id="redevPick" class="wide" hidden data-nosave></select>
+            <span class="hint wide" id="redevStatus"></span>
+          </div>
+          <label class="f">정비사업 단계
             <select id="reconStage" data-required>
               <option value="">선택</option>
-              <option>재건축진단</option><option>정비구역지정</option><option>추진위원회승인</option><option>조합설립인가</option>
-              <option>사업시행인가</option><option>관리처분인가</option><option>이주철거</option><option>착공</option><option>준공</option>
+              <option value="기본계획수립">1 기본계획수립</option><option value="재건축진단">2 안전진단</option><option value="정비구역지정">3 정비구역지정</option>
+              <option value="추진위원회승인">4 추진위원회승인</option><option value="조합설립인가">5 조합설립인가</option><option value="사업시행인가">6 사업시행인가</option>
+              <option value="관리처분인가">7 관리처분인가</option><option value="이주철거">8 이주·철거신고</option><option value="착공">9 착공신고</option>
+              <option value="일반분양승인">10 일반분양승인</option><option value="준공">11 준공인가</option>
             </select>
           </label>
+          <label class="f">현재 단계 진입일 <span class="unit">선택</span><input id="stageDate" type="date"></label>
           <label class="f">종전자산 감정가 <span class="unit">만원</span><input id="priorAssetValue" type="number" step="100" placeholder="비우면 매매가 80%" data-required></label>
           <label class="f">예상 분담금 <span class="unit">만원, 환급은 −</span><input id="expectedContribution" type="number" step="100" data-required></label>
           <label class="f">신축 예상 시세 <span class="unit">만원</span><input id="newUnitValue" type="number" step="100"></label>

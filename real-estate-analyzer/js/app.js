@@ -86,6 +86,86 @@
     };
   }
 
+  // ── 최신 공공데이터 상태 ──────────────────────────────────────────────
+  // available: 로컬 서버가 있어 조회 가능, regulation: 규제 변경 감지 결과, landUse: 주소별 필지 조회 결과
+  const liveState = { available: false, regulation: null, regulationError: '', landUse: {}, sources: [], redev: null };
+  function liveFor(V) {
+    const addr = String(V.parcelAddress || '').trim();
+    return {
+      regulation: liveState.regulation,
+      landUse: addr ? liveState.landUse[addr] || null : null,
+      unavailable: liveState.available ? liveState.regulationError || '조회 중' : '로컬 서버(npm start)로 열어야 조회됩니다',
+    };
+  }
+  async function liveGet(pathQs) {
+    const r = await fetch(pathQs, { cache: 'no-store' });
+    const j = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+    if (!r.ok) throw Object.assign(new Error(j.error || `HTTP ${r.status}`), { code: j.code });
+    return j;
+  }
+  async function refreshRegulation(fresh) {
+    try {
+      liveState.regulation = await liveGet(`api/regulation${fresh ? '?fresh=1' : ''}`);
+      liveState.regulationError = '';
+    } catch (err) {
+      liveState.regulation = null;
+      liveState.regulationError = err.message;
+    }
+    try { liveState.sources = (await liveGet('api/sources')).sources; } catch (_) { /* 무시 */ }
+    update();
+  }
+  async function fetchLandUse(fresh) {
+    const addr = $('parcelAddress').value.trim();
+    const st = $('landUseStatus');
+    if (!liveState.available) { st.textContent = '로컬 서버(npm start)로 열어야 조회할 수 있습니다.'; return; }
+    if (!addr) { st.textContent = '지번 주소를 입력하세요.'; return; }
+    st.textContent = '조회 중…';
+    try {
+      const r = await liveGet(`api/landuse?address=${encodeURIComponent(addr)}${fresh ? '&fresh=1' : ''}`);
+      liveState.landUse[addr] = r;
+      st.textContent = `${r.address} · ${r.zones.length ? r.zones.join(', ') : '지역지구 없음'} (${fmtTime(r.fetchedAt)} 조회)`;
+    } catch (err) {
+      st.textContent = `조회 실패: ${err.message}`;
+    }
+    await refreshSources();
+    update();
+  }
+  async function fetchRedev() {
+    const st = $('redevStatus'), pick = $('redevPick');
+    if (!liveState.available) { st.textContent = '로컬 서버(npm start)로 열어야 조회할 수 있습니다.'; return; }
+    const r = E.region($('regionId').value);
+    const sido = r.group.startsWith('서울') ? '서울' : r.group.startsWith('경기') ? '경기' : null;
+    if (!sido) { st.textContent = '정비사업 조회는 서울·경기 지역만 지원합니다.'; return; }
+    st.textContent = '조회 중…';
+    try {
+      const res = await liveGet(`api/redev?sido=${sido}&q=${encodeURIComponent($('redevQuery').value.trim())}`);
+      liveState.redev = res;
+      if (!res.items.length) { pick.hidden = true; st.textContent = `검색 결과가 없습니다 (${res.source} ${res.total}건 중).`; return; }
+      pick.innerHTML = '<option value="">결과 선택</option>' + res.items.map((it, k) => `<option value="${k}">${esc(it.name || '(이름 없음)')} · ${esc(it.district)} · ${esc(P.RECON.stageLabels[it.currentStage] || it.currentStage || it.stage || '단계 미상')}${it.currentStageDate ? ' ' + it.currentStageDate : ''}</option>`).join('');
+      pick.hidden = false;
+      st.textContent = `${res.source} · ${fmtTime(res.fetchedAt)} 조회 · ${res.items.length}건`;
+    } catch (err) {
+      pick.hidden = true;
+      st.textContent = `조회 실패: ${err.message}`;
+    }
+    await refreshSources();
+    update();
+  }
+  function applyRedev(k) {
+    const it = liveState.redev && liveState.redev.items[k];
+    if (!it) return;
+    $('reconTarget').checked = true;
+    if (it.currentStage) $('reconStage').value = it.currentStage;
+    $('stageDate').value = it.currentStageDate || '';
+    liveState.redevPicked = it;
+    $('redevStatus').textContent = `${it.name}: ${P.RECON.stageLabels[it.currentStage] || it.currentStage || '단계 미상'}${it.currentStageDate ? ` (${it.currentStageDate})` : ''} 반영 · 출처 ${liveState.redev.source}`;
+    update();
+  }
+  async function refreshSources() {
+    try { liveState.sources = (await liveGet('api/sources')).sources; } catch (_) { /* 무시 */ }
+  }
+  const fmtTime = (iso) => { try { return new Date(iso).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' }); } catch (_) { return iso; } };
+
   // 필수 조건 입력 (빈 칸은 null → 누락으로 판정)
   const REQ_INPUT = {
     purpose: 'purpose', regionId: 'regionId', propertyType: 'propertyType', areaM2: 'areaM2', price: 'price', cash: 'cash',
@@ -117,7 +197,9 @@
         priorAssetValue: num('priorAssetValue', MAN), expectedContribution: num('expectedContribution', MAN),
         newUnitValue: num('newUnitValue', MAN), relocationLtv: num('relocationLtv', 0.01),
         tempHousingDeposit: num('tempHousingDeposit', MAN), ownerHeldYears: num('ownerHeldYears'), ownerLivedYears: num('ownerLivedYears'),
+        stageDate: V.reconTarget ? V.stageDate || null : null,
       },
+      live: liveFor(V),
       timing: { purchaseDate: V.purchaseDate || null, holdingYears: num('years'), moveInBy: V.moveInBy || null },
       loan: { rate: (num('rate') ?? 4) / 100, termYears: num('termYears') || 30, method: V.method },
     };
@@ -295,7 +377,26 @@
           ${t.events.length ? `<ul class="timeline">${t.events.map((e) => `<li><span class="date">${esc(e.date)}</span><span>${esc(e.label)}</span></li>`).join('')}</ul>` : '<p class="muted">매수 예정 시점을 입력하세요.</p>'}
         </div>
       </div>
+      ${freshnessCard()}
       ${checklistCard(a.checklist)}`;
+  }
+  function freshnessCard() {
+    const reg = liveState.regulation;
+    let head;
+    if (!liveState.available) head = `${chip('warning', '미확인')} 로컬 서버 없이 열려 있어 최신 공공데이터를 조회하지 못했습니다. 규정 기준일 ${esc(P.asOf)} 값으로 계산합니다.`;
+    else if (!reg) head = `${chip('warning', '확인 실패')} 규제 변경 확인 실패: ${esc(liveState.regulationError || '조회 중')}`;
+    else if (reg.changes.some((x) => !x.upcoming)) head = `${chip('critical', '변경 감지')} 기준일 이후 규제 관련 변경이 있습니다. 아래 항목을 확인하세요.`;
+    else head = `${reg.ok ? chip('good', '최신') : chip('warning', '일부 미확인')} ${fmtTime(reg.checkedAt)} 확인 · 기준일 ${esc(reg.asOf)} 이후 규제 변경 ${reg.changes.filter((x) => !x.upcoming).length}건`;
+    const changes = reg && reg.changes.length
+      ? `<ul class="plain">${reg.changes.slice(0, 10).map((x) => `<li>${esc(x.date || '')} · ${esc(x.kind)} · ${x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener">${esc(x.title)}</a>` : esc(x.title)}</li>`).join('')}</ul>` : '';
+    const rows = liveState.sources.map((src) => `<tr><td>${esc(src.name)}</td><td>${src.configured ? (src.last ? (src.last.ok ? chip('good', '정상') : chip('critical', '실패')) : chip('neutral', '대기')) : chip('warning', '설정 필요')}</td><td class="muted">${src.last ? esc(fmtTime(src.last.at)) + (src.last.detail ? ' · ' + esc(src.last.detail) : '') : esc(src.configured ? '' : src.how)}</td></tr>`).join('');
+    return `<div class="card">
+      <h3>데이터 최신성</h3>
+      <p>${head}</p>
+      ${changes}
+      ${rows ? `<div class="tbl-wrap"><table><thead><tr><th>출처</th><th>상태</th><th>최근 조회</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
+      ${liveState.available ? '<div class="row"><button type="button" class="ghost" id="regRefresh">지금 다시 확인</button></div>' : ''}
+    </div>`;
   }
 
   // ── 재건축·이주비 ─────────────────────────────────────────────────────
@@ -304,10 +405,17 @@
     $('reconTabBtn').hidden = !r;
     if (!r) { $('tab-recon').innerHTML = ''; return; }
     const reloc = c.tenantDeposit ? '세입자 보증금 반환' : c.livesIn ? '공사기간 임시거주 보증금' : '—';
+    const picked = liveState.redevPicked && liveState.redevPicked.currentStage === r.stage ? liveState.redevPicked : null;
+    const steps = picked ? picked.timeline : P.RECON.stages.slice(1).map((st) => ({ stage: st, label: P.RECON.stageLabels[st] || st, date: st === r.stage ? r.stageDate : null, current: st === r.stage }));
+    const timeline = `<div class="card">
+        <h3>재건축 진행 단계${picked ? ` · ${esc(picked.name)}` : ''}</h3>
+        <p class="muted">${picked ? `출처 ${esc(liveState.redev.source)} · ${esc(fmtTime(liveState.redev.fetchedAt))} 조회` : '정비사업 검색으로 불러오면 단계별 날짜가 채워집니다.'}${r.elapsedInStage ? ` · 현재 단계 ${r.elapsedInStage.toFixed(1)}년 경과 반영` : ''}</p>
+        <ol class="steps">${steps.map((st, k) => `<li class="${st.current ? 'current' : st.done ? 'done' : ''}"><span class="no">${k + 1}</span><span>${st.current ? '<span class="now">현재 단계</span>' : ''}${esc(st.label)}</span><span class="date">${st.date ? esc(st.date) : ''}</span></li>`).join('')}</ol>
+      </div>`;
     $('tab-recon').innerHTML = `
       <div class="grid2">
         <div class="card">
-          <h3>${esc(r.stage)} 단계 · 신축 입주까지 약 ${r.yearsToMoveIn}년</h3>
+          <h3>${esc(P.RECON.stageLabels[r.stage] || r.stage)} 단계 · 신축 입주까지 약 ${r.yearsToMoveIn}년</h3>
           <p class="muted">이주 시점: ${esc(r.relocationTiming)}</p>
           <p>${r.transferBlocked ? chip('critical', '조합원 지위 승계 불가') : chip('good', '조합원 지위 승계 가능')}</p>
           ${r.expectedGain != null ? `<p class="big ${r.expectedGain >= 0 ? 'pos' : 'neg'}">${esc(won(r.expectedGain, { sign: true }))}</p><p class="muted">예상 차익 = 신축 시세 − (매수 총비용 + 분담금 + 입주까지 이자)</p>` : '<p class="muted">신축 예상 시세를 넣으면 예상 차익을 계산합니다.</p>'}
@@ -329,6 +437,7 @@
           </tbody></table></div>
         </div>
       </div>
+      ${timeline}
       <div class="card">
         <h3>확인할 것</h3>
         <ul class="plain">${r.blockers.concat(r.warnings, r.notes).map((n) => `<li>${esc(n)}</li>`).join('')}</ul>
@@ -716,6 +825,12 @@
         ? '서버에 인증키가 설정되어 있습니다. 시군구와 단지명을 확인하고 불러오세요.'
         : '공공데이터포털(data.go.kr)에서 "국토교통부_아파트 매매 실거래가 자료"를 활용신청하고 받은 일반 인증키를 입력하세요. 키는 이 브라우저에만 저장됩니다.';
       try { $('apiKey').value = localStorage.getItem('rea-api-key') || ''; } catch (_) { /* 무시 */ }
+      if (h.live) {
+        liveState.available = true;
+        await refreshRegulation(false);
+        setInterval(() => refreshRegulation(false), 30 * 60e3); // 열어둔 동안 30분마다 다시 확인
+        if ($('parcelAddress').value.trim()) fetchLandUse(false);
+      }
     } catch (_) { /* 서버 없음: CSV만 사용 */ }
   }
   function recentMonths(n) {
@@ -892,6 +1007,10 @@
   $('csvSample').addEventListener('click', () => { $('csvText').value = sampleCsv(); loadCsv($('csvText').value); });
   $('apiLawd').addEventListener('input', () => { lawdTouched = true; });
   $('apiFetch').addEventListener('click', fetchRtms);
+  $('landUseFetch').addEventListener('click', () => fetchLandUse(true));
+  $('redevFetch').addEventListener('click', fetchRedev);
+  $('redevPick').addEventListener('change', (e) => { if (e.target.value !== '') applyRedev(Number(e.target.value)); });
+  document.addEventListener('click', (e) => { if (e.target.id === 'regRefresh') refreshRegulation(true); });
   $('candSave').addEventListener('click', saveCandidate);
   $('candOut').addEventListener('click', (e) => {
     const load = e.target.closest('[data-load]'), del = e.target.closest('[data-del]');

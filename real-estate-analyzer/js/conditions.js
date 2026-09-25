@@ -137,7 +137,17 @@
     const stage = r.stage || '해당없음';
     const idx = stageIndex(stage);
     const notes = [], blockers = [];
-    const years = R.yearsToMoveIn[stage] ?? 0;
+    // 현재 단계에 들어선 날짜가 있으면 경과 기간만큼 줄인다. 다음 단계의 남은 기간보다 짧아지지는 않는다
+    let years = R.yearsToMoveIn[stage] ?? 0;
+    let elapsed = 0;
+    const since = parseDate(r.stageDate);
+    const buy = c.timing && c.timing.purchaseDate ? c.timing.purchaseDate + '-01' : null;
+    if (since && buy && buy > since) {
+      elapsed = (Date.parse(buy) - Date.parse(since)) / (365.25 * 864e5);
+      const next = R.stages[idx + 1];
+      years = Math.max(next ? R.yearsToMoveIn[next] ?? 0 : 0, years - elapsed);
+      years = Math.round(years * 10) / 10;
+    }
     const untilRelocation = idx < stageIndex('이주철거') ? Math.max(years - R.constructionYears, 0) : 0;
     const sch = E.schedule(fund.loanUsed, c.loan.rate, c.loan.termYears, c.loan.method);
     const k = Math.min(Math.round(untilRelocation * 12), sch.balance.length);
@@ -229,7 +239,7 @@
     }
 
     return {
-      stage, stageIndex: idx, yearsToMoveIn: years, yearsUntilRelocation: untilRelocation, transferBlocked,
+      stage, stageIndex: idx, stageDate: since, elapsedInStage: elapsed, yearsToMoveIn: years, yearsUntilRelocation: untilRelocation, transferBlocked,
       relocationBase: base, relocationLtv: ltv, relocationLoan: reloc, balanceAtRelocation: balance, netRelocation: netReloc,
       tempDeposit, cashAtRelocation: cashAtReloc, contribution, totalCashCommitted, interest, expectedGain,
       fundsAtRelocation: atReloc, fundsAtMoveIn: atMoveIn, relocationTiming: timing, notes, blockers, warnings,
@@ -270,6 +280,51 @@
     return out;
   }
 
+  // 공공데이터의 추진단계 문구 → 분석기 단계
+  const STAGE_PATTERNS = [
+    [/준공|이전고시|입주|청산|해산/, '준공'], [/일반분양|분양승인|입주자모집/, '일반분양승인'], [/착공/, '착공'], [/이주|철거/, '이주철거'],
+    [/관리처분/, '관리처분인가'], [/사업시행/, '사업시행인가'], [/조합설립/, '조합설립인가'], [/추진위/, '추진위원회승인'],
+    [/기본계획/, '기본계획수립'], [/정비구역|구역지정|예정구역|정비계획/, '정비구역지정'], [/안전진단|재건축진단/, '재건축진단'],
+  ];
+  function stageFromText(text) {
+    const t = String(text || '');
+    for (const [re, stage] of STAGE_PATTERNS) if (re.test(t)) return stage;
+    return null;
+  }
+
+  // 'YYYY-MM-DD' | 'YYYYMMDD' | 'YYYY.MM.DD' | 'YY.MM.DD' → 'YYYY-MM-DD'
+  function parseDate(v) {
+    const t = String(v == null ? '' : v).trim();
+    let m = t.match(/^(\d{4})[-./]?(\d{1,2})[-./]?(\d{1,2})/);
+    if (!m) { m = t.match(/^(\d{2})\.(\d{1,2})\.(\d{1,2})$/); if (m) m[1] = '20' + m[1]; }
+    if (!m) return null;
+    const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+    if (y < 1970 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+
+  /**
+   * 공공데이터 행의 '단계별 날짜' 열(예: 추진위원회승인일, 조합설립인가일)로 단계 이력을 만든다.
+   * 현재 단계 = 날짜가 있는 가장 늦은 단계. 날짜 열이 없으면 추진단계 문구로 판정.
+   */
+  function stageTimeline(row, stageText) {
+    const reached = {};
+    for (const [k, v] of Object.entries(row || {})) {
+      const date = parseDate(v);
+      if (!date) continue;
+      const stage = stageFromText(k);
+      if (stage && (!reached[stage] || date < reached[stage])) reached[stage] = date;
+    }
+    const steps = R.stages.slice(1).map((stage) => ({ stage, label: R.stageLabels[stage] || stage, date: reached[stage] || null }));
+    let currentIdx = -1;
+    steps.forEach((st, k) => { if (st.date) currentIdx = k; });
+    let current = currentIdx >= 0 ? steps[currentIdx].stage : null;
+    const fromText = stageFromText(stageText);
+    if (fromText && (!current || stageIndex(fromText) > stageIndex(current))) current = fromText;
+    steps.forEach((st) => { st.current = st.stage === current; st.done = current ? stageIndex(st.stage) < stageIndex(current) : false; });
+    return { steps, current, currentDate: current ? reached[current] || null : null };
+  }
+
   // ── 종합 ──────────────────────────────────────────────────────────────
   /**
    * 규제 판정 + 조건 플래그. level: block(차단) / warn(주의) / info(정보)
@@ -284,10 +339,28 @@
     res.ready = true;
 
     const region = E.region(c.regionId);
-    const landPermit = region.landPermit && P.PROPERTY.landPermitTypes.includes(c.propertyType);
+    const live = c.live || {};
+    const flag0 = [];
+    // 최신 공공데이터가 있으면 규정 파일보다 우선한다
+    let permitZone = region.landPermit;
+    if (live.landUse) {
+      permitZone = !!live.landUse.landPermit;
+      if (permitZone !== region.landPermit) flag0.push(['info', '최신성', `필지 토지이용계획(${live.landUse.fetchedAt.slice(0, 10)} 조회) 기준으로 토지거래허가구역 ${permitZone ? '지정' : '미지정'}으로 판정했습니다 (규정 파일과 다름).`]);
+      if (live.landUse.redevZone && !isRecon(c)) flag0.push(['warn', '재건축', `이 필지는 정비 관련 구역(${live.landUse.zones.filter((z) => /정비|재건축|재개발|재정비/.test(z)).join(', ')})에 있습니다. 재건축 대상이면 재건축 항목을 채우세요.`]);
+      if (live.landUse.speculativeOverheated && !region.regulated) flag0.push(['warn', '최신성', '필지 토지이용계획에 투기과열지구가 표시됩니다. 규정 파일의 비규제 판정이 오래됐을 수 있습니다.']);
+    }
+    if (!live.regulation) {
+      flag0.push(['warn', '최신성', `최신 규제 고시·법령 변경을 확인하지 못했습니다 (${live.unavailable || '로컬 서버 필요'}). 규정 기준일 ${P.asOf} 값으로 계산했습니다.`]);
+    } else {
+      const done = live.regulation.changes.filter((x) => !x.upcoming);
+      if (done.length) flag0.push(['warn', '최신성', `규정 기준일(${P.asOf}) 이후 규제 관련 고시·법령 변경 ${done.length}건이 감지됐습니다: ${done.slice(0, 3).map((x) => `${x.date} ${x.title}`).join(' / ')}. 규정 파일 갱신 전 결과는 참고만 하세요.`]);
+      if (!live.regulation.ok) flag0.push(['warn', '최신성', `일부 출처를 확인하지 못했습니다: ${live.regulation.errors.join(' / ')}`]);
+    }
+    const landPermit = permitZone && P.PROPERTY.landPermitTypes.includes(c.propertyType);
     const reg = { regulated: region.regulated, capital: region.capital, landPermit };
     res.region = { ...reg, name: region.name };
     const flag = (level, category, message) => res.flags.push({ level, category, message });
+    flag0.forEach(([l, cat, m]) => flag(l, cat, m));
 
     if (c.jeonse && c.jeonse >= c.price) flag('warn', '입력', '전세가가 매매가 이상입니다 (깡통전세 위험 또는 입력 오류).');
 
@@ -295,7 +368,7 @@
     if (landPermit) {
       if (!livesIn(c)) flag('block', '규제', '토지거래허가구역: 허가 후 2년 실거주 의무 → 전세 낀 매수·비거주 매수 불가');
       else flag('info', '규제', '토지거래허가구역: 계약 전 구청 허가 필요, 2년 실거주 의무');
-    } else if (region.landPermit) {
+    } else if (permitZone) {
       flag('info', '규제', `토지거래허가구역이지만 ${c.propertyType}는 허가 대상이 아닙니다 (아파트만 해당).`);
     }
     if (region.regulated) flag('info', '규제', '규제지역: 자금조달계획서(증빙 포함) 제출, 양도세 비과세에 2년 거주 요건');
@@ -333,5 +406,5 @@
     return res;
   }
 
-  return { PURPOSES, REQUIREMENTS, checklist, missing, valueErrors, unitPrice, residenceScore, investmentScore, reconstruction, timing, assess, livesIn, isRecon, isLive, isInvest, stageIndex };
+  return { PURPOSES, REQUIREMENTS, stageFromText, stageTimeline, parseDate, checklist, missing, valueErrors, unitPrice, residenceScore, investmentScore, reconstruction, timing, assess, livesIn, isRecon, isLive, isInvest, stageIndex };
 });

@@ -1,0 +1,12 @@
+{
+  "_설명": "이 파일을 config.local.json으로 복사해 인증키를 넣으세요. config.local.json은 깃에 올라가지 않습니다. 환경변수로 줘도 됩니다.",
+  "dataGoKrKey": "공공데이터포털 일반 인증키(Decoding) — 국토교통부_아파트 매매 실거래가 자료 활용신청",
+  "vworldKey": "브이월드(vworld.kr) 오픈API 인증키 — 2D데이터·검색·토지이용계획 사용 신청",
+  "vworldDomain": "localhost",
+  "seoulKey": "서울 열린데이터광장 인증키",
+  "seoulRedevService": "OA-2253 '서울시 재개발 재건축 정비사업 현황' 상세 페이지 샘플 URL의 서비스명",
+  "ggKey": "경기데이터드림 인증키",
+  "ggRedevService": "경기데이터드림 '일반 정비 사업 추진 현황' Open API 서비스명",
+  "lawOc": "법제처 국가법령정보 공동활용 OC (가입 이메일의 @ 앞부분)",
+  "newsFeeds": ["https://www.molit.go.kr/USR/NEWS/m_71/rss.jsp", "https://www.korea.kr/rss/policy.xml"]
+}
