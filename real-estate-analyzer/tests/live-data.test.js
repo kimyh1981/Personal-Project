@@ -135,3 +135,30 @@ test('조건 판정: 최신 데이터 우선, 미확인이면 경고', () => {
   const changed = C.assess({ ...base, live: { regulation: { ok: true, changes: [{ title: '조정대상지역 추가', date: '2026-10-12' }], errors: [] } } }, fund);
   assert.ok(changed.flags.some((f) => f.message.includes('조정대상지역 추가')));
 });
+
+test('카카오: 주소 → 좌표, 주변 가장 가까운 역·초등학교', async () => {
+  const calls = [];
+  L.setFetcher(async (url, headers) => {
+    calls.push({ url, headers });
+    const j = (o) => ({ status: 200, body: JSON.stringify(o) });
+    if (/address\.json/.test(url)) return j({ documents: [{ x: '126.95', y: '37.55', address_name: '서울 마포구 아현동 777' }] });
+    if (/SW8/.test(url)) return j({ documents: [{ place_name: '아현역 2호선', distance: '420' }] });
+    if (/SC4/.test(url)) return j({ documents: [{ place_name: '예시중학교', distance: '200' }, { place_name: '아현초등학교', distance: '350' }] });
+    return { status: 404, body: '' };
+  });
+  const c = cfg({ kakaoKey: 'KK' });
+  const g = await L.geocode(c, '서울 마포구 아현동 777');
+  assert.deepEqual([g.lat, g.lng], [37.55, 126.95]);
+  assert.equal(calls[0].headers.Authorization, 'KakaoAK KK');
+  const n = await L.nearby(c, g.lat, g.lng);
+  assert.equal(n.station.name, '아현역 2호선');
+  assert.equal(n.station.meters, 420);
+  assert.equal(n.school.name, '아현초등학교'); // 중학교는 건너뛴다
+  await assert.rejects(L.nearby(cfg({ kakaoKey: '' }), 37.5, 127), (e) => e.code === 'NOT_CONFIGURED');
+});
+
+test('전월세 XML 파싱: 보증금·월세', () => {
+  const E = require('../js/engine.js');
+  const r = E.parseRtmsRentXml('<response><header><resultCode>000</resultCode></header><body><items><item><aptNm>예시</aptNm><deposit>60,000</deposit><monthlyRent>0</monthlyRent><dealYear>2026</dealYear><dealMonth>8</dealMonth><dealDay>3</dealDay><excluUseAr>84.9</excluUseAr><umdNm>아현동</umdNm></item></items></body></response>');
+  assert.deepEqual([r.items[0].deposit, r.items[0].monthly, r.items[0].date], [6e8, 0, '2026-08-03']);
+});

@@ -8,7 +8,7 @@ const fragment = process.argv.includes('--fragment');
 
 const html = read('index.html');
 const css = read('css/style.css');
-const scripts = ['js/policy.js', 'js/engine.js', 'js/conditions.js', 'js/charts.js', 'js/app.js', 'js/pwa.js'].map(read);
+const scripts = ['js/policy.js', 'js/engine.js', 'js/conditions.js', 'js/geo.js', 'js/recommend.js', 'js/charts.js', 'js/app.js', 'js/pwa.js'].map(read);
 const body = html.slice(html.indexOf('<!--BODY-START-->') + 17, html.indexOf('<!--BODY-END-->'));
 // 외부 글꼴 링크 (Artifact는 CSP상 Google Fonts 외 스타일시트를 막으므로 조각 출력에서는 뺀다)
 const links = html.match(/<link rel="stylesheet" href="https:[^>]+>/g) || [];

@@ -2,10 +2,10 @@
 // - 앱 파일: 네트워크 우선(항상 최신), 오프라인이면 캐시
 // - /api/ (공공데이터): 절대 캐시하지 않음 — 최신 데이터만 쓴다
 // - 글꼴: 캐시 우선
-const VERSION = 'rea-v2';
+const VERSION = 'rea-v3';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
-  'js/policy.js', 'js/engine.js', 'js/conditions.js', 'js/charts.js', 'js/app.js', 'js/pwa.js',
+  'js/policy.js', 'js/engine.js', 'js/conditions.js', 'js/geo.js', 'js/recommend.js', 'js/charts.js', 'js/app.js', 'js/pwa.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png',
 ];
 
