@@ -322,7 +322,7 @@
     const el = $('verdict');
     el.dataset.tone = v.tone;
     el.innerHTML = `
-      <div class="score" aria-label="종합 점수 ${v.score}점"><b>${v.score}</b><span>/ 100</span></div>
+      <div class="score" style="--pct:${v.score}" aria-label="종합 점수 ${v.score}점"><b>${v.score}</b><span>/ 100</span></div>
       <div>
         <h2>${esc(v.label)}</h2>
         <p class="sub">${esc(c.i.purpose)} · ${esc(c.r.name)} ${esc(c.i.propertyType)} · ${esc(won(c.i.price))} · 전용 ${c.i.areaM2}㎡ · ${c.i.years}년 ${c.livesIn ? '거주' : '보유'} 가정</p>
@@ -492,7 +492,7 @@
     const el = $('verdict');
     el.dataset.tone = 'warning';
     const miss = list.filter((r) => !r.done);
-    el.innerHTML = `<div class="score" aria-label="판정 보류"><b>—</b><span>보류</span></div>
+    el.innerHTML = `<div class="score" style="--pct:0" aria-label="판정 보류"><b>—</b><span>보류</span></div>
       <div>
         <h2>입력 보완 필요</h2>
         <p class="sub">필수 조건 ${miss.length}개가 비어 있어 판정하지 않았습니다.</p>

@@ -10,10 +10,11 @@ const html = read('index.html');
 const css = read('css/style.css');
 const scripts = ['js/policy.js', 'js/engine.js', 'js/conditions.js', 'js/charts.js', 'js/app.js', 'js/pwa.js'].map(read);
 const body = html.slice(html.indexOf('<!--BODY-START-->') + 17, html.indexOf('<!--BODY-END-->'));
-const fonts = html.match(/<link rel="stylesheet" href="https:\/\/fonts[^>]+>/)[0];
+// 외부 글꼴 링크 (Artifact는 CSP상 Google Fonts 외 스타일시트를 막으므로 조각 출력에서는 뺀다)
+const fonts = fragment ? '' : (html.match(/<link rel="stylesheet" href="https:[^>]+>/) || [''])[0];
 const title = html.match(/<title>[^<]+<\/title>/)[0];
 const inline = scripts.map((s) => `<script>\n${s.replace(/<\/script/gi, '<\\/script')}\n</script>`).join('\n');
-const head = `${title}\n<link rel="preconnect" href="https://fonts.googleapis.com">\n${fonts}\n<style>\n${css}\n</style>`;
+const head = `${title}\n${fonts}\n<style>\n${css}\n</style>`;
 
 const out = fragment
   ? `${head}\n${body}\n${inline}\n`

@@ -2,7 +2,7 @@
 // - 앱 파일: 네트워크 우선(항상 최신), 오프라인이면 캐시
 // - /api/ (공공데이터): 절대 캐시하지 않음 — 최신 데이터만 쓴다
 // - 글꼴: 캐시 우선
-const VERSION = 'rea-v1';
+const VERSION = 'rea-v2';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
   'js/policy.js', 'js/engine.js', 'js/conditions.js', 'js/charts.js', 'js/app.js', 'js/pwa.js',
@@ -23,7 +23,7 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin === location.origin && url.pathname.includes('/api/')) return; // 공공데이터는 항상 네트워크
-  if (/fonts\.(googleapis|gstatic)\.com$/.test(url.hostname)) {
+  if (/fonts\.(googleapis|gstatic)\.com$|^cdn\.jsdelivr\.net$/.test(url.hostname)) {
     e.respondWith(caches.open(VERSION).then(async (c) => {
       const hit = await c.match(req);
       if (hit) return hit;
