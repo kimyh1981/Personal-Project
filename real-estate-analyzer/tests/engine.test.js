@@ -294,3 +294,33 @@ test('예산 밖 자금: 시뮬레이션에 이자와 만기 일시상환 반영
   const i = { ...baseLoan, regionId: 'seoul-마포구', buyerType: 'nohome', cash: 4 * EOK, moveCost: 0, homesAfter: 1, publicRatio: 0.69 };
   assert.ok(E.maxAffordablePrice({ ...i, extraCash: 2 * EOK }).price > E.maxAffordablePrice(i).price + 1.5 * EOK);
 });
+
+test('상환 능력: 월 잉여·실수령 비율·외벌이·소득 중단·은퇴', () => {
+  const base = {
+    netMonthly: 800 * MAN, living: 300 * MAN, existingMonthly: 0, newPayment: 200 * MAN, stressPayment: 250 * MAN,
+    holdingMonthly: 20 * MAN, ownIncome: 7000 * MAN, spouseIncome: 5000 * MAN, cashAfter: 3000 * MAN,
+    age: 40, retireAge: 60, loan: 4 * EOK, rate: 0.04, termYears: 30, method: 'amortized', incomeGrowth: 0.03, employment: 'regular',
+  };
+  const r = E.repaymentCapacity(base);
+  assert.equal(r.surplus, 280 * MAN);
+  near(r.payRatio, 0.25, 1e-12);
+  assert.equal(r.stressSurplus, 230 * MAN);
+  near(r.singleSurplus, 800 * MAN * (7 / 12) - 520 * MAN, 1);
+  near(r.runwayNoIncome, 3000 / 520, 1e-9);
+  assert.equal(r.retire.yearsToRetire, 20);
+  assert.ok(r.retire.balance > 0 && r.retire.remainingYears === 10);
+  const st = Object.fromEntries(r.checks.map((c) => [c.key, c.status]));
+  assert.equal(st.surplus, 'good');
+  assert.equal(st.runway, 'critical'); // 5.8개월 < 6
+  assert.equal(st.single, 'warning'); // 외벌이 월 53만원 적자, 현금 3천만원으로 약 56개월
+  const tight = E.repaymentCapacity({ ...base, netMonthly: 500 * MAN, employment: 'freelance' });
+  const st2 = Object.fromEntries(tight.checks.map((c) => [c.key, c.status]));
+  assert.equal(st2.surplus, 'critical');
+  assert.equal(st2.stability, 'warning');
+  assert.ok(E.repaymentCapacity({ ...base, retireAge: 75 }).checks.find((c) => c.key === 'retire').status === 'good');
+});
+
+test('DSR 기존 부채: 신용대출은 5년 분할상환으로 본다', () => {
+  near(E.existingDebtService(600 * MAN, 5000 * MAN, 0.06), 600 * MAN + E.pmt(5000 * MAN, 0.06, 60) * 12, 1);
+  assert.equal(E.existingDebtService(0, 0), 0);
+});

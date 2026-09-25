@@ -3,7 +3,7 @@
   const E = window.REA, P = window.REA_POLICY, C = window.REA_CHARTS, COND = window.REA_COND;
   const $ = (id) => document.getElementById(id);
   const MAN = 1e4;
-  const STORE_KEY = 'rea-inputs-v1';
+  const STORE_KEY = 'rea-inputs-v2'; // v2: 연소득을 본인·배우자로 나눔
 
   // ── 포맷 ──────────────────────────────────────────────────────────────
   function won(x, opts = {}) {
@@ -73,8 +73,12 @@
       purpose: val('purpose'), propertyType: val('propertyType'), assumeTenant: !!val('assumeTenant'),
       price: n('price', MAN), areaM2: n('areaM2'), jeonsePrice: opt('jeonsePrice', MAN), publicRatio: n('publicRatio', 0.01),
       buyerType: val('buyerType'),
-      annualIncome: n('annualIncome', MAN), existingDebt: n('existingDebt', MAN), cash: n('cash', MAN),
-      monthlyLiving: n('monthlyLiving', MAN), age: n('age'), annualSavings: n('annualSavings', MAN),
+      ownIncome: n('annualIncome', MAN), spouseIncome: n('spouseIncome', MAN), borrower: val('borrower'),
+      netMonthly: n('netMonthly', MAN), employment: val('employment'), spouseEmployment: val('spouseEmployment') || null,
+      incomeGrowth: n('incomeGrowth', 0.01), retireAge: n('retireAge'),
+      existingDebt: E.existingDebtService(n('existingDebt', MAN), n('creditBalance', MAN), 0.055),
+      annualSavingsInput: opt('annualSavings', MAN), cash: n('cash', MAN),
+      monthlyLiving: n('monthlyLiving', MAN), age: n('age'),
       newlywed: !!val('newlywed'), newborn: !!val('newborn'), multichild: !!val('multichild'),
       rate: n('rate', 0.01), termYears: Math.max(1, n('termYears')), rateType: val('rateType'), method: val('method'),
       lender: val('lender'), loanWanted: opt('loanWanted', MAN),
@@ -171,7 +175,7 @@
   // 필수 조건 입력 (빈 칸은 null → 누락으로 판정)
   const REQ_INPUT = {
     purpose: 'purpose', regionId: 'regionId', propertyType: 'propertyType', areaM2: 'areaM2', price: 'price', cash: 'cash',
-    ownedHomes: 'buyerType', annualIncome: 'annualIncome', 'timing.purchaseDate': 'purchaseDate',
+    ownedHomes: 'buyerType', annualIncome: 'annualIncome', netMonthlyIncome: 'netMonthly', employment: 'employment', 'timing.purchaseDate': 'purchaseDate',
     'location.jobCommuteMin': 'jobCommuteMin', 'location.schoolWalkMin': 'schoolWalkMin', 'location.subwayWalkMin': 'subwayWalkMin',
     recentTrades: 'recentTrades', jeonse: 'jeonsePrice', 'timing.holdingYears': 'years',
     'recon.stage': 'reconStage', 'recon.priorAssetValue': 'priorAssetValue', 'recon.expectedContribution': 'expectedContribution',
@@ -190,6 +194,7 @@
       areaM2: num('areaM2'), price: num('price', MAN), recentTrades: trades, jeonse: num('jeonsePrice', MAN),
       assumeTenant: !!V.assumeTenant, cash: num('cash', MAN), ownedHomes: owned ?? null,
       willSellExisting: V.buyerType === 'one_dispose', annualIncome: num('annualIncome', MAN), annualSavings: num('annualSavings', MAN) || 0,
+      netMonthlyIncome: num('netMonthly', MAN), employment: V.employment || null,
       location: {
         subwayWalkMin: num('subwayWalkMin'), jobCommuteMin: num('jobCommuteMin'), schoolWalkMin: num('schoolWalkMin'),
         amenities: list('amenities'), negatives: list('negatives'),
@@ -207,6 +212,13 @@
     };
   }
 
+  // DSR 소득: 공동 차주면 두 사람 합산, 단독이면 본인만. 가구 소득은 정책대출·PIR에 쓴다
+  function withIncome(i) {
+    i.householdIncome = i.ownIncome + (i.spouseIncome || 0);
+    i.annualIncome = i.borrower === 'single' ? i.ownIncome : i.householdIncome;
+    return i;
+  }
+
   // 보유 상태 → 취득 후 주택 수·세제상 1세대1주택 여부
   function household(i) {
     switch (i.buyerType) {
@@ -219,6 +231,7 @@
 
   // ── 계산 ──────────────────────────────────────────────────────────────
   function compute(i, cond) {
+    withIncome(i);
     const hh = household(i);
     const r = E.region(i.regionId);
     const livesIn = COND.livesIn(cond);
@@ -244,7 +257,7 @@
       : E.pmt(loan, i.rate, termYears * 12);
     const pf = i.usePrivate ? E.privateFinance({
       type: i.privateType, principal: i.privatePrincipal, rate: i.privateRate, termYears: i.privateTerm,
-      bondDiscount: i.bondDiscount, annualIncome: i.annualIncome, repaymentSource: i.privateRepay,
+      bondDiscount: i.bondDiscount, annualIncome: i.householdIncome, repaymentSource: i.privateRepay,
     }) : null;
     const privateCash = pf && pf.principal ? pf.principal - pf.setup : 0;
     const privateLoan = pf && pf.principal ? { principal: pf.principal, rate: pf.rate, termYears: pf.termYears, setup: pf.setup } : null;
@@ -273,7 +286,7 @@
       privateLoan,
     });
     const policyLoans = E.policyLoanEligibility({
-      price: i.price, householdIncome: i.annualIncome, netAsset: i.cash, areaM2: i.areaM2, buyerType: i.buyerType,
+      price: i.price, householdIncome: i.householdIncome, netAsset: i.cash, areaM2: i.areaM2, buyerType: i.buyerType,
       newlywed: i.newlywed, newborn: i.newborn, multichild: i.multichild,
     });
     const afford = E.maxAffordablePrice({
@@ -290,6 +303,17 @@
     }) : null;
     const sens = livesIn && base.feasible ? E.sensitivity(sim) : null;
     const jeonseRatio = i.jeonsePrice > 0 ? i.jeonsePrice / i.price : null;
+    const capacity = E.repaymentCapacity({
+      netMonthly: i.netMonthly, living: i.monthlyLiving, existingMonthly: i.existingDebt / 12,
+      newPayment: monthlyPayment, stressPayment: stress.rateShocks[2].payment,
+      holdingMonthly: holding.total / 12 + (i.price * i.maintenanceRate) / 12,
+      otherMonthly: pf ? pf.annualInterest / 12 : 0,
+      ownIncome: i.ownIncome, spouseIncome: i.borrower === 'single' && !i.spouseEmployment ? 0 : i.spouseIncome,
+      cashAfter: leftover, age: i.age, retireAge: i.retireAge, loan, rate: i.rate, termYears, method: i.method,
+      incomeGrowth: i.incomeGrowth, employment: i.employment, spouseEmployment: i.spouseIncome > 0 ? i.spouseEmployment : null,
+    });
+    // 연 순저축을 비워두면 매수 후 매달 남는 돈으로 계산한다 (재건축 이주비·분담금 재원)
+    cond.annualSavings = i.annualSavingsInput != null ? i.annualSavingsInput : Math.max(0, capacity.surplus * 12);
     const assess = COND.assess(cond, {
       price: i.price, loanUsed: loan, tenantDeposit, requiredCash: need, surplus: i.cash + privateCash - need,
       totalCost: i.price + closing.total, dsr: i.annualIncome > 0 ? (monthlyPayment * 12 + i.existingDebt) / i.annualIncome : 0,
@@ -297,11 +321,10 @@
     });
     const v = E.verdict({
       fundingGap, burden: monthlyIncome > 0 ? monthlyPayment / monthlyIncome : Infinity,
-      stressBurden: stress.rateShocks[2].burden,
+      stressBurden: null, emergencyMonths: null, extraChecks: capacity.checks,
       buyWinProb: livesIn && base.feasible ? mc.buyWinProb : null,
       breakeven, expectedAppreciation: i.appreciation,
-      emergencyMonths: i.monthlyLiving > 0 ? Math.max(0, leftover) / i.monthlyLiving : 99,
-      jeonseRatio, pir: i.annualIncome > 0 ? i.price / i.annualIncome : null,
+      jeonseRatio, pir: i.householdIncome > 0 ? i.price / i.householdIncome : null,
       gapExcess: gap ? gap.excess : null, gapEquity: gap ? gap.equity : null, privateUsed,
     });
     // 개인 차입 점검 항목을 조건 판정에 합친다
@@ -313,7 +336,7 @@
     // 필수 조건 점검의 차단 항목은 점수와 무관하게 매수 불가
     if (assess.verdict === '불가') { v.label = '매수 불가 — 조건 차단'; v.tone = 'critical'; }
     else if (v.tone === 'good' && assess.flags.some((f) => f.level === 'warn' && f.category !== '규제')) { v.label = '조건부 검토'; v.tone = 'warning'; }
-    return { i, hh, r, cond, livesIn, tenantDeposit, gap, assess, pf, privateCash, privateUsed, affordBank, afford, sens, limit, loan, termYears, publicPrice, closing, holding, monthlyPayment, need, fundingGap, leftover, stress, sim, base, breakeven, mc, policyLoans, jeonseRatio, v };
+    return { i, hh, r, cond, capacity, livesIn, tenantDeposit, gap, assess, pf, privateCash, privateUsed, affordBank, afford, sens, limit, loan, termYears, publicPrice, closing, holding, monthlyPayment, need, fundingGap, leftover, stress, sim, base, breakeven, mc, policyLoans, jeonseRatio, v };
   }
 
   // ── 렌더 ──────────────────────────────────────────────────────────────
@@ -359,7 +382,7 @@
 
   // ── 조건 점검 ─────────────────────────────────────────────────────────
   function checklistCard(list) {
-    const order = ['목적', '지역', '입지', '주택유형', '확보자금', '매매단가', '필요자금', '재건축', '시기'];
+    const order = ['목적', '지역', '입지', '주택유형', '확보자금', '소득·상환', '매매단가', '필요자금', '재건축', '시기'];
     const rows = list.slice().sort((a, b) => order.indexOf(a.category) - order.indexOf(b.category))
       .map((r) => `<tr><td>${esc(r.category)}</td><td>${esc(r.label)}</td><td>${esc(r.scope)}</td><td>${r.done ? chip('good', '입력됨') : chip('critical', '누락')}</td><td class="muted">${esc(r.why)}</td></tr>`).join('');
     const done = list.filter((r) => r.done).length;
@@ -507,10 +530,42 @@
     const k = [
       { k: '대출 가능액', v: won(c.loan), s: `한도 결정: ${c.limit.binding.label}` },
       { k: '필요 자기자본', v: won(c.need - (c.privateCash || 0)), s: c.fundingGap > 0 ? `${won(c.fundingGap)} 부족` : c.privateUsed ? `개인 차입 ${won(c.privateUsed)}로 채움 (예산 밖)` : `여유 ${won(c.leftover)}` },
-      { k: '월 상환액 (첫 달)', v: won(c.monthlyPayment), s: c.i.annualIncome > 0 ? `월 소득의 ${pct(c.monthlyPayment / (c.i.annualIncome / 12))}` : '소득 없음' },
+      { k: '월 상환액 (첫 달)', v: won(c.monthlyPayment), s: `매달 남는 돈 ${won(c.capacity.surplus)}` },
       { k: '취득 부대비용', v: won(c.closing.total), s: `매매가의 ${pct(c.closing.total / c.i.price, 2)}` },
     ];
     $('kpis').innerHTML = k.map((x) => `<div class="kpi"><span class="k">${x.k}</span><span class="v">${esc(x.v)}</span><span class="s">${esc(x.s)}</span></div>`).join('');
+  }
+
+  // 실제로 매달 갚을 수 있나: 세후 현금흐름과 위기 시나리오
+  function capacityCard(c) {
+    const k = c.capacity;
+    const months = (m) => (m == null ? '—' : isFinite(m) ? `${m.toFixed(1)}개월` : '적자 없음');
+    const row = (label, v, cls) => `<tr><td>${label}</td><td class="n ${cls || ''}">${esc(v)}</td></tr>`;
+    const scen = [
+      ['지금', k.surplus, null],
+      ['금리 +2%p', k.stressSurplus, k.stressSurplus < 0 ? Math.max(0, c.leftover) / -k.stressSurplus : Infinity],
+      ...(k.singleSurplus != null ? [['한 사람 소득 중단', k.singleSurplus, k.runwaySingle]] : []),
+      ['소득 모두 중단', -(k.fixed + k.debt), k.runwayNoIncome],
+    ];
+    return `<div class="card">
+      <h3>매달 갚을 수 있나</h3>
+      <p class="muted">DSR ${c.i.borrower === 'single' ? '본인 단독' : '부부 공동'} 기준 심사소득 ${esc(won(c.i.annualIncome))} · 실제 상환 여력은 세후 실수령으로 봅니다.</p>
+      <div class="tbl-wrap"><table><tbody>
+        ${row('월 실수령 (세후)', won(k.net))}
+        ${row('− 생활비', won(-c.i.monthlyLiving))}
+        ${row('− 보유세·수선비 (월)', won(-(k.fixed - c.i.monthlyLiving)))}
+        ${row('− 새 주담대 상환', won(-c.monthlyPayment))}
+        ${c.i.existingDebt ? row('− 기존 대출·신용대출', won(-c.i.existingDebt / 12)) : ''}
+        ${c.pf && c.pf.annualInterest ? row('− 개인 차입 이자', won(-c.pf.annualInterest / 12)) : ''}
+        <tr class="total"><td>매달 남는 돈</td><td class="n ${k.surplus >= 0 ? 'pos' : 'neg'}">${esc(won(k.surplus, { sign: true }))}</td></tr>
+        ${row('실수령 대비 대출 상환', pct(k.payRatio))}
+      </tbody></table></div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>상황</th><th class="n">매달</th><th class="n">여유 현금으로 버티는 기간</th></tr></thead>
+        <tbody>${scen.map(([l, v, m]) => `<tr><td>${l}</td><td class="n ${v >= 0 ? 'pos' : 'neg'}">${esc(won(v, { sign: true }))}</td><td class="n">${m === null ? '—' : months(m)}</td></tr>`).join('')}</tbody>
+      </table></div>
+      ${k.retire && k.retire.remainingYears > 0 ? `<p class="muted">${c.i.retireAge}세 은퇴 시점(${k.retire.yearsToRetire}년 뒤) 대출 잔액 ${esc(won(k.retire.balance))} — 남은 ${k.retire.remainingYears}년은 퇴직금·연금·매도로 정리할 계획이 필요합니다.</p>` : ''}
+    </div>`;
   }
 
   function renderLoan(c) {
@@ -525,7 +580,7 @@
       </div>`).join('');
     const pl = c.policyLoans.map((p) => `<tr><td>${esc(p.name)}</td><td>${p.eligible ? chip('good', '대상') : chip('critical', '제외')}</td><td class="n">${esc(won(p.maxLoan))}</td><td>${esc(p.rate)}</td><td>${esc(p.reasons.join(', ') || '—')}</td></tr>`).join('');
     const zoneName = { regulated: '규제지역 (조정대상·투기과열)', capital: '수도권 비규제', local: '지방 비규제' }[L.zone];
-    $('tab-loan').innerHTML = `
+    $('tab-loan').innerHTML = capacityCard(c) + `
       <div class="card">
         <h3>세 가지 한도 중 가장 낮은 값이 대출 가능액</h3>
         <p class="muted">${esc(zoneName)} · DSR 심사금리 ${pct(L.dsrRate, 2)} (실금리 ${pct(c.i.rate, 2)} + 스트레스 ${pct(L.stress, 2)}) · 만기 ${L.termYears}년</p>
@@ -734,7 +789,7 @@
       <div class="card">
         <h3>가격 수준 점검</h3>
         <ul class="plain">
-          ${c.i.annualIncome > 0 ? `<li>PIR (매매가 ÷ 연소득) ${(c.i.price / c.i.annualIncome).toFixed(1)}배 — 서울 중위 가구는 대체로 10배 이상입니다.</li>` : ''}
+          ${c.i.householdIncome > 0 ? `<li>PIR (매매가 ÷ 가구 연소득) ${(c.i.price / c.i.householdIncome).toFixed(1)}배 — 서울 중위 가구는 대체로 10배 이상입니다.</li>` : ''}
           ${jr != null ? `<li>전세가율 ${pct(jr)} — 전세가는 거주 가치, 나머지 ${pct(1 - jr)}는 미래 상승 기대가 반영된 몫입니다.</li>
           <li>임대수익률 환산 (전세 × 전월세전환율 4.5% ÷ 매매가) ${pct((c.i.jeonsePrice * 0.045) / c.i.price, 2)} — 대출 금리 ${pct(c.i.rate, 2)}${(c.i.jeonsePrice * 0.045) / c.i.price < c.i.rate ? '보다 낮아 보유 자체의 현금 수익은 불리합니다.' : ' 이상입니다.'}</li>` : ''}
           ${rentRisk}
@@ -961,7 +1016,8 @@
       ['개인 차입 필요 (예산 밖)', (r) => r.privateUsed || 0, (x) => (x ? won(x) : '없음'), 'low'],
       ['투자 점수', (r) => (r.assess.scores['투자'] ? r.assess.scores['투자'].score : NaN), (x) => (isFinite(x) ? `${x}점` : '—'), 'high'],
       ['월 상환액', (r) => r.monthlyPayment, won, 'low'],
-      ['월 소득 대비 상환', (r) => r.monthlyPayment / (r.i.annualIncome / 12), (x) => pct(x), 'low'],
+      ['실수령 대비 대출 상환', (r) => r.capacity.payRatio, (x) => pct(x), 'low'],
+      ['매달 남는 돈', (r) => r.capacity.surplus, (x) => won(x, { sign: true }), 'high'],
       ['금리 +2%p 부담률', (r) => r.stress.rateShocks[2].burden, (x) => pct(x), 'low'],
       ['취득 부대비용', (r) => r.closing.total, won, 'low'],
       ['연 보유세', (r) => r.holding.total, won, 'low'],
