@@ -1,0 +1,12 @@
+{
+  "purpose": "투자",
+  "region": {"sido": "서울", "sigungu": "송파구", "dong": "잠실동"},
+  "location": {"subway_walk_min": 5, "amenities": ["한강", "업무지구 인접"]},
+  "property": {"type": "아파트", "area_m2": 76.5, "built_year": 1978, "reconstruction_target": true},
+  "price": {"asking": 270000, "recent_trades": [265000, 272000], "jeonse": 60000, "assume_tenant": true},
+  "buyer": {"cash": 200000, "owned_homes": 1, "annual_income": 20000, "will_sell_existing": false},
+  "reconstruction": {"stage": "조합설립인가", "prior_asset_value": 180000,
+                     "expected_contribution": 50000, "new_unit_value": 400000,
+                     "owner_held_years": 12, "owner_lived_years": 3},
+  "timing": {"purchase_date": "2026-11", "holding_years": 10}
+}

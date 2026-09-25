@@ -1,0 +1,7 @@
+{
+  "purpose": "투자",
+  "region": {"sido": "서울"},
+  "property": {"type": "아파트", "reconstruction_target": true},
+  "price": {"asking": 150000},
+  "buyer": {"cash": 50000}
+}

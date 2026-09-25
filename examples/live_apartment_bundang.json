@@ -1,0 +1,11 @@
+{
+  "purpose": "거주+투자",
+  "region": {"sido": "경기", "sigungu": "성남시 분당구", "dong": "정자동"},
+  "location": {"subway_walk_min": 7, "job_commute_min": 35, "school_walk_min": 5,
+               "amenities": ["탄천", "대형마트"], "negatives": []},
+  "property": {"type": "아파트", "area_m2": 84.9, "built_year": 1995, "households": 1200},
+  "price": {"asking": 145000, "recent_trades": [140000, 143000, 147000], "jeonse": 70000},
+  "buyer": {"cash": 85000, "owned_homes": 0, "annual_income": 13000, "first_time_buyer": true},
+  "loan": {"rate": 4.0, "years": 30},
+  "timing": {"purchase_date": "2026-11", "holding_years": 8, "move_in_by": "2027-03"}
+}

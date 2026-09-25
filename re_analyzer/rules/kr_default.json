@@ -1,0 +1,87 @@
+{
+  "as_of": "2025-10-16",
+  "notice": "6.27(2025) 가계부채 대책 및 10.15(2025) 주택시장 안정화 대책 기준 값입니다. 규제는 수시로 바뀌므로 계약 전 반드시 국토부·금융위 최신 고시와 은행 창구에서 확인하세요.",
+
+  "regulated_areas": {
+    "서울": ["*"],
+    "경기": [
+      "과천시", "광명시",
+      "성남시 분당구", "성남시 수정구", "성남시 중원구",
+      "수원시 영통구", "수원시 장안구", "수원시 팔달구",
+      "안양시 동안구", "용인시 수지구", "의왕시", "하남시"
+    ]
+  },
+  "land_permit_areas": {
+    "서울": ["*"],
+    "경기": [
+      "과천시", "광명시",
+      "성남시 분당구", "성남시 수정구", "성남시 중원구",
+      "수원시 영통구", "수원시 장안구", "수원시 팔달구",
+      "안양시 동안구", "용인시 수지구", "의왕시", "하남시"
+    ]
+  },
+  "land_permit_property_types": ["아파트"],
+  "land_permit_residence_years": 2,
+  "capital_area": ["서울", "경기", "인천"],
+
+  "loan": {
+    "ltv": {
+      "regulated": 40,
+      "regulated_first_time": 70,
+      "unregulated": 70,
+      "unregulated_first_time": 80,
+      "capital_first_time": 70,
+      "capital_multi_home": 0
+    },
+    "amount_cap_by_price": [
+      {"price_up_to": 150000, "cap": 60000},
+      {"price_up_to": 250000, "cap": 40000},
+      {"price_up_to": null,   "cap": 20000}
+    ],
+    "amount_cap_applies_to": "capital_or_regulated",
+    "one_home_requires_sale_in_capital": true,
+    "move_in_required_months": 6,
+    "dsr_limit": 40,
+    "stress_rate_add": {"capital_or_regulated": 3.0, "other": 0.75}
+  },
+
+  "acquisition_tax": {
+    "standard_brackets": [
+      {"price_up_to": 60000, "rate": 1.0},
+      {"price_up_to": 90000, "rate": "linear"},
+      {"price_up_to": null,  "rate": 3.0}
+    ],
+    "heavy": {
+      "regulated":   {"2": 8.0, "3+": 12.0},
+      "unregulated": {"2": null, "3": 8.0, "4+": 12.0}
+    },
+    "education_tax_ratio_standard": 0.1,
+    "education_tax_heavy": 0.4,
+    "rural_tax_over_85m2": {"standard": 0.2, "8.0": 0.6, "12.0": 1.0},
+    "first_time_reduction": {"cap": 200, "price_up_to": 120000}
+  },
+
+  "brokerage": [
+    {"price_up_to": 5000,   "rate": 0.6, "max": 25},
+    {"price_up_to": 20000,  "rate": 0.5, "max": 80},
+    {"price_up_to": 90000,  "rate": 0.4, "max": null},
+    {"price_up_to": 120000, "rate": 0.5, "max": null},
+    {"price_up_to": 150000, "rate": 0.6, "max": null},
+    {"price_up_to": null,   "rate": 0.7, "max": null}
+  ],
+  "brokerage_vat": 10,
+  "misc_cost_rate": 0.3,
+
+  "reconstruction": {
+    "relocation_loan_ltv": 50,
+    "relocation_loan_note": "이주비 대출은 종전자산 감정가 기준 LTV가 적용되며, 수도권·규제지역 주담대 한도(6억 등)와 다주택자 대출 제한이 이주비에도 적용되는지 조합·주관 은행에 반드시 확인하세요.",
+    "transfer_restriction_stage_regulated": "조합설립인가",
+    "transfer_exception": {"held_years": 10, "lived_years": 5},
+    "stage_years_to_move_in": {
+      "재건축진단": 12, "정비구역지정": 10, "추진위원회승인": 9,
+      "조합설립인가": 8, "사업시행인가": 6, "관리처분인가": 4.5,
+      "이주철거": 4, "착공": 3, "준공": 0
+    },
+    "excess_profit_note": "재건축초과이익환수(조합원 1인당 초과이익 8천만원 초과분 부과) 대상 여부를 확인하세요."
+  }
+}

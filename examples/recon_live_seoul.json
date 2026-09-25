@@ -1,0 +1,53 @@
+{
+  "purpose": "거주+투자",
+  "region": {
+    "sido": "서울",
+    "sigungu": "노원구",
+    "dong": "상계동"
+  },
+  "location": {
+    "subway_walk_min": 6,
+    "job_commute_min": 45,
+    "school_walk_min": 4,
+    "amenities": [
+      "중계 학원가"
+    ]
+  },
+  "property": {
+    "type": "아파트",
+    "area_m2": 58,
+    "built_year": 1988,
+    "reconstruction_target": true
+  },
+  "price": {
+    "asking": 72000,
+    "recent_trades": [
+      73000,
+      74500,
+      71000
+    ],
+    "jeonse": 28000
+  },
+  "buyer": {
+    "cash": 45000,
+    "owned_homes": 0,
+    "annual_income": 11000,
+    "first_time_buyer": true,
+    "annual_savings": 4000
+  },
+  "loan": {
+    "rate": 4.0,
+    "years": 30
+  },
+  "reconstruction": {
+    "stage": "정비구역지정",
+    "prior_asset_value": 60000,
+    "expected_contribution": 35000,
+    "new_unit_value": 130000
+  },
+  "timing": {
+    "purchase_date": "2026-11",
+    "holding_years": 12,
+    "move_in_by": "2027-02"
+  }
+}

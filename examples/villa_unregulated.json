@@ -1,0 +1,10 @@
+{
+  "purpose": "거주",
+  "region": {"sido": "인천", "sigungu": "부평구"},
+  "location": {"subway_walk_min": 10, "job_commute_min": 50, "school_walk_min": 8},
+  "property": {"type": "빌라", "area_m2": 59, "built_year": 2018},
+  "price": {"asking": 28000, "jeonse": 20000},
+  "buyer": {"cash": 9000, "owned_homes": 0, "annual_income": 5500, "first_time_buyer": true},
+  "loan": {"rate": 4.3, "years": 30},
+  "timing": {"purchase_date": "2026-12"}
+}
