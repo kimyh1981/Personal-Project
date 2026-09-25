@@ -264,3 +264,54 @@ input[type=date] {
 .steps li.current .no { border-color: var(--accent); color: var(--accent); }
 .steps .date { font-family: var(--font-mono); font-size: 12px; font-weight: 400; }
 .steps .now { display: inline-block; font-size: 11px; background: var(--accent); color: var(--surface); padding: 1px 7px; border-radius: 4px; margin-right: 6px; }
+
+/* ── 앱 모드 (휴대폰) ─────────────────────────────────────────────── */
+.appbar, .peek { display: none; }
+@media (max-width: 900px) {
+  :root { --bar-h: 64px; }
+  html { -webkit-tap-highlight-color: transparent; }
+  body { overscroll-behavior-y: contain; }
+  .app { padding: 14px 16px calc(var(--bar-h) + 28px + env(safe-area-inset-bottom, 0px)); gap: 14px; }
+  .masthead { padding-bottom: 12px; gap: 4px; }
+  .masthead h1 { font-size: 24px; }
+  .masthead .lede, .masthead .eyebrow { display: none; }
+  .layout[data-view="results"] > #inputs { display: none; }
+  .layout[data-view="inputs"] > .results { display: none; }
+  body[data-view="inputs"] .peek { display: flex; }
+  .panel { border-radius: 14px; }
+  input[type=number], input[type=text], input[type=month], input[type=date], input[type=password], select { min-height: 44px; font-size: 16px; }
+  .checks label { min-height: 36px; }
+  button { min-height: 40px; }
+  .tabs { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); margin-inline: -16px; padding-inline: 12px; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs button { padding: 12px 12px; }
+  .verdict { padding: 16px; }
+  .score { width: 76px; height: 76px; border-width: 5px; }
+  .score b { font-size: 24px; }
+  .appbar {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+    background: var(--surface); border-top: 1px solid var(--line);
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -4px 16px rgb(0 0 0 / 0.06);
+  }
+  .appbar button {
+    flex: 1; display: grid; justify-items: center; gap: 2px; background: none; border: 0; color: var(--ink-3);
+    font: 600 11px var(--font-body); padding: 6px 2px; min-height: 52px; border-radius: 10px;
+  }
+  .appbar button svg { width: 24px; height: 24px; }
+  .appbar button[aria-current="true"] { color: var(--accent); background: var(--accent-soft); }
+  .peek {
+    position: fixed; left: 12px; right: 12px; bottom: calc(var(--bar-h) + 10px + env(safe-area-inset-bottom, 0px)); z-index: 19;
+    align-items: center; gap: 10px; padding: 8px 8px 8px 14px; border-radius: 14px;
+    background: var(--surface); border: 1px solid var(--line); border-left: 5px solid var(--tone, var(--warning));
+    box-shadow: 0 6px 20px rgb(0 0 0 / 0.12); font-size: 13px;
+  }
+  .peek[data-tone=good] { --tone: var(--good); }
+  .peek[data-tone=critical] { --tone: var(--critical); }
+  .peek b { font: 500 20px var(--font-mono); }
+  .peek span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .peek button { padding: 8px 12px; }
+}
+@media (display-mode: standalone) {
+  .masthead .eyebrow { display: none; }
+}
