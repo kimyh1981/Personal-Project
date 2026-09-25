@@ -211,3 +211,18 @@ textarea { font-family: var(--font-mono); font-size: 12px; resize: vertical; }
 .tn-bar { position: absolute; top: 0; bottom: 0; }
 .tn-vals { font-size: 12px; color: var(--ink-2); text-align: right; }
 @media (max-width: 560px) { .tn-row { grid-template-columns: 1fr auto; } .tn-track { grid-column: 1 / -1; grid-row: 2; } }
+
+.primary { background: var(--accent); color: var(--surface); border: 1px solid var(--accent); padding: 8px 14px; }
+.primary:hover { filter: brightness(1.08); }
+.primary:disabled { opacity: 0.6; cursor: progress; }
+.api-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 10px 12px; align-items: end; }
+input[type=text], input[type=password] {
+  width: 100%; min-width: 0; font: 14px var(--font-body); color: var(--ink);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px;
+}
+.f > input[type=text], .f > input[type=password] { flex: 1 0 100%; }
+code { font-family: var(--font-mono); font-size: 12px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+td.best { font-weight: 600; background: var(--accent-soft); }
+.cand-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.cand-actions button { padding: 4px 8px; font-size: 12px; }
+th.cand { min-width: 140px; }

@@ -105,6 +105,7 @@
         <label class="f">연 수선·유지비 <span class="unit">% of 집값</span><input id="maintenanceRate" type="number" step="0.05" value="0.2"></label>
         <label class="f">이사비 (회당) <span class="unit">만원</span><input id="moveCost" type="number" step="10" value="300"></label>
         <label class="f">채권 할인율 <span class="unit">%</span><input id="bondDiscount" type="number" step="0.5" value="8"></label>
+        <label class="f">기다리는 동안 금리 변화 <span class="unit">%p</span><input id="rateChange" type="number" step="0.25" value="0"></label>
         <div class="checks wide">
           <label><input id="vat" type="checkbox"> 중개보수 부가세 10% 포함</label>
           <label><input id="reform2026" type="checkbox"> 2026 세제개편안 반영 (미확정)</label>
@@ -121,17 +122,33 @@
         <button role="tab" data-tab="loan" aria-selected="true">대출 한도</button>
         <button role="tab" data-tab="cost">세금·부대비용</button>
         <button role="tab" data-tab="compare">매수 vs 임차</button>
+        <button role="tab" data-tab="timing">매수 시점</button>
         <button role="tab" data-tab="risk">리스크</button>
         <button role="tab" data-tab="market">실거래가</button>
+        <button role="tab" data-tab="candidates">후보 비교</button>
       </nav>
 
       <section class="tab" id="tab-loan"></section>
       <section class="tab" id="tab-cost" hidden></section>
       <section class="tab" id="tab-compare" hidden></section>
+      <section class="tab" id="tab-timing" hidden></section>
       <section class="tab" id="tab-risk" hidden></section>
       <section class="tab" id="tab-market" hidden>
+        <div class="card" id="apiCard">
+          <h3>국토부 실거래가 자동 조회</h3>
+          <p class="muted" id="apiStatus">로컬 서버(<code>npm start</code>)로 열면 공공데이터포털 API로 단지 거래를 직접 불러옵니다. 지금은 파일로 열려 있어 CSV 불러오기만 쓸 수 있습니다.</p>
+          <div class="api-grid" id="apiForm" hidden>
+            <label class="f">시군구 코드 <span class="unit">5자리</span><input id="apiLawd" type="text" inputmode="numeric" maxlength="5"></label>
+            <label class="f">단지명 포함 <span class="unit">비우면 전체</span><input id="apiName" type="text" placeholder="예: 래미안"></label>
+            <label class="f">기간
+              <select id="apiMonths"><option value="12">최근 12개월</option><option value="24" selected>최근 24개월</option><option value="36">최근 36개월</option></select>
+            </label>
+            <label class="f" id="apiKeyWrap">인증키 <span class="unit">일반 인증키(Decoding)</span><input id="apiKey" type="password" autocomplete="off"></label>
+            <button type="button" id="apiFetch" class="primary">실거래가 불러오기</button>
+          </div>
+        </div>
         <div class="card">
-          <h3>국토부 실거래가 불러오기</h3>
+          <h3>CSV로 불러오기</h3>
           <p class="muted">rt.molit.go.kr에서 내려받은 아파트 매매 CSV를 올리거나 내용을 붙여넣으세요. 해제된 거래는 빼고, 전용면적 ±3㎡ 거래로 ㎡당 가격 추세를 구해 입력한 매매가와 비교합니다.</p>
           <div class="row">
             <input id="csvFile" type="file" accept=".csv,text/csv">
@@ -140,6 +157,17 @@
           <textarea id="csvText" rows="4" placeholder="CSV 내용을 여기에 붙여넣기"></textarea>
         </div>
         <div id="marketOut"></div>
+      </section>
+      <section class="tab" id="tab-candidates" hidden>
+        <div class="card">
+          <h3>후보 매물 비교</h3>
+          <p class="muted">지금 입력한 조건을 후보로 저장하고 최대 4개까지 나란히 비교합니다. 후보는 이 브라우저에만 저장됩니다.</p>
+          <div class="row">
+            <input id="candName" type="text" placeholder="후보 이름 (예: 마포 A단지 84)" maxlength="30" style="flex:1;min-width:0">
+            <button type="button" id="candSave" class="primary">현재 조건을 후보로 저장</button>
+          </div>
+        </div>
+        <div id="candOut"></div>
       </section>
 
       <footer class="notes" id="notes"></footer>

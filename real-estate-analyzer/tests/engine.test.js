@@ -231,3 +231,32 @@ test('민감도: 집값 상승률을 올리면 매수 쪽 차이가 커진다', 
   assert.ok(rate.high < 0);
   assert.equal(r.rows.length, 6);
 });
+
+test('매수 시점: 집값이 빨리 오르면 지금 사는 게, 떨어지면 기다리는 게 유리', () => {
+  const opt = {
+    waits: [0, 2], scenarios: [-0.03, 0.08], rateChange: 0,
+    loanFor: (price) => Math.min(price * 0.4, 6 * EOK), closingFor: (price) => price * 0.035,
+  };
+  const t = E.timingCompare(sim, opt);
+  const [now, wait] = t.grid;
+  assert.equal(now.wait, 0);
+  assert.ok(now.cells[1].final > wait.cells[1].final, '상승장: 지금 매수 우위');
+  assert.ok(wait.cells[0].final > now.cells[0].final, '하락장: 대기 우위');
+  near(now.cells[0].final, E.simulate({ ...sim, appreciation: -0.03 }).buyFinal, 1);
+});
+
+test('국토부 API XML 파싱: 해제거래 제외, 금액 쉼표 처리', () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><response><header><resultCode>000</resultCode><resultMsg>OK</resultMsg></header><body><items>
+    <item><aptNm>마포래미안푸르지오</aptNm><cdealType></cdealType><dealAmount>  185,000</dealAmount><dealDay>7</dealDay><dealMonth>8</dealMonth><dealYear>2026</dealYear><excluUseAr>84.59</excluUseAr><floor>12</floor><umdNm>아현동</umdNm></item>
+    <item><aptNm>마포래미안푸르지오</aptNm><cdealType>O</cdealType><dealAmount>199,000</dealAmount><dealDay>9</dealDay><dealMonth>8</dealMonth><dealYear>2026</dealYear><excluUseAr>84.59</excluUseAr><floor>3</floor></item>
+  </items><totalCount>2</totalCount></body></response>`;
+  const r = E.parseRtmsXml(xml);
+  assert.equal(r.items.length, 1);
+  assert.deepEqual([r.items[0].date, r.items[0].price, r.items[0].floor], ['2026-08-07', 18.5 * EOK, 12]);
+  assert.throws(() => E.parseRtmsXml('<response><header><resultCode>30</resultCode><resultMsg>SERVICE KEY IS NOT REGISTERED</resultMsg></header></response>'), /30/);
+});
+
+test('지역별 법정동 코드', () => {
+  assert.equal(E.region('seoul-마포구').lawd, '11440');
+  assert.equal(P.REGIONS.filter((r) => r.regulated && !r.lawd).length, 0);
+});

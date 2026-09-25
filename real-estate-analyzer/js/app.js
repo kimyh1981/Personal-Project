@@ -50,33 +50,38 @@
   }
   function persist() {
     try {
-      const out = {};
-      for (const e of form.elements) if (e.id && e.type !== 'file') out[e.id] = e.type === 'checkbox' ? e.checked : e.value;
-      localStorage.setItem(STORE_KEY, JSON.stringify(out));
+      localStorage.setItem(STORE_KEY, JSON.stringify(formValues()));
     } catch (_) { /* 무시 */ }
   }
-  function read() {
+  // 폼의 현재 값 {id: 문자열|불리언}
+  function formValues() {
+    const out = {};
+    for (const e of form.elements) if (e.id && e.type !== 'file' && !e.dataset.nosave) out[e.id] = e.type === 'checkbox' ? e.checked : e.value;
+    return out;
+  }
+  function read(V = formValues()) {
+    const val = (id) => (V[id] ?? defaults[id]);
     // 빈 칸은 예시 기본값으로 대신한다 (0으로 조용히 바뀌지 않도록)
     const n = (id, scale = 1) => {
-      let v = parseFloat($(id).value);
+      let v = parseFloat(val(id));
       if (!isFinite(v)) v = parseFloat(defaults[id]);
       return isFinite(v) ? v * scale : 0;
     };
-    const opt = (id, scale = 1) => { const v = parseFloat($(id).value); return isFinite(v) ? v * scale : null; };
+    const opt = (id, scale = 1) => { const v = parseFloat(V[id]); return isFinite(v) ? v * scale : null; };
     return {
-      regionId: $('regionId').value,
+      regionId: val('regionId'),
       price: n('price', MAN), areaM2: n('areaM2'), jeonsePrice: n('jeonsePrice', MAN), publicRatio: n('publicRatio', 0.01),
-      buyerType: $('buyerType').value,
+      buyerType: val('buyerType'),
       annualIncome: n('annualIncome', MAN), existingDebt: n('existingDebt', MAN), cash: n('cash', MAN),
       monthlyLiving: n('monthlyLiving', MAN), age: n('age'),
-      newlywed: $('newlywed').checked, newborn: $('newborn').checked, multichild: $('multichild').checked,
-      rate: n('rate', 0.01), termYears: Math.max(1, n('termYears')), rateType: $('rateType').value, method: $('method').value,
-      lender: $('lender').value, loanWanted: opt('loanWanted', MAN),
+      newlywed: !!val('newlywed'), newborn: !!val('newborn'), multichild: !!val('multichild'),
+      rate: n('rate', 0.01), termYears: Math.max(1, n('termYears')), rateType: val('rateType'), method: val('method'),
+      lender: val('lender'), loanWanted: opt('loanWanted', MAN),
       rentDeposit: n('rentDeposit', MAN), rentMonthly: n('rentMonthly', MAN), rentLoan: n('rentLoan', MAN), rentLoanRate: n('rentLoanRate', 0.01),
       years: Math.min(30, Math.max(1, Math.round(n('years')))), appreciation: n('appreciation', 0.01), appreciationVol: n('appreciationVol', 0.01),
       rentGrowth: n('rentGrowth', 0.01), invReturn: n('invReturn', 0.01), invVol: n('invVol', 0.01),
       maintenanceRate: n('maintenanceRate', 0.01), moveCost: n('moveCost', MAN), bondDiscount: n('bondDiscount', 0.01),
-      vat: $('vat').checked, reform2026: $('reform2026').checked, useRenewalRight: $('useRenewalRight').checked,
+      vat: !!val('vat'), reform2026: !!val('reform2026'), useRenewalRight: !!val('useRenewalRight'), rateChange: n('rateChange', 0.01),
     };
   }
 
@@ -427,6 +432,171 @@
     $('notes').innerHTML = [`규정 기준일 ${P.asOf}.`, ...P.notes, '이 계산은 의사결정 참고용이며 세무·대출 확정 판단은 전문가와 금융기관에서 확인하세요.'].map((n) => `<p>${esc(n)}</p>`).join('');
   }
 
+  // ── 매수 시점 ─────────────────────────────────────────────────────────
+  function renderTiming(c) {
+    const tab = $('tab-timing');
+    if (!c.base.feasible) {
+      tab.innerHTML = '<div class="card"><h3>지금 매수 조건이 성립하지 않습니다</h3><p class="muted">자금 조달이 가능해야 시점을 비교할 수 있습니다.</p></div>';
+      return;
+    }
+    const i = c.i, hh = c.hh;
+    const round = (x) => Math.round(x * 1e4) / 1e4;
+    const scenarios = [...new Set([-0.02, 0, i.appreciation, i.appreciation + 0.03].map(round))].sort((a, b) => a - b);
+    const loanFor = (price, rate) => {
+      const max = E.loanLimit({
+        price, regionId: i.regionId, buyerType: i.buyerType, annualIncome: i.annualIncome, existingAnnualDebtService: i.existingDebt,
+        rate, termYears: i.termYears, method: i.method, rateType: i.rateType, lender: i.lender,
+      }).amount;
+      return i.loanWanted != null ? Math.min(i.loanWanted, max) : max;
+    };
+    const closingFor = (price) => E.closingCosts({
+      price, regionId: i.regionId, homesAfter: hh.homesAfter, temporaryTwo: hh.temporaryTwo, areaOver85: i.areaM2 > 85,
+      firstTime: i.buyerType === 'first', publicPrice: price * i.publicRatio, bondDiscount: i.bondDiscount, vat: i.vat,
+    }).total;
+    const t = E.timingCompare(c.sim, { waits: [0, 1, 2, 3], scenarios, rateChange: i.rateChange, loanFor, closingFor });
+    const best = scenarios.map((_, k) => Math.max(...t.grid.filter((r) => r.cells[k].feasible).map((r) => r.cells[k].final)));
+    const head = scenarios.map((g) => `<th class="n">연 ${pct(g)}${round(g) === round(i.appreciation) ? ' (기본)' : ''}</th>`).join('');
+    const rows = t.grid.map((r) => `<tr><td>${r.wait ? `${r.wait}년 뒤 매수` : '지금 매수'}</td>${r.cells.map((cell, k) => {
+      if (!cell.feasible) return '<td class="n">자금 부족</td>';
+      const d = cell.final - t.grid[0].cells[k].final;
+      return `<td class="n${cell.final === best[k] ? ' best' : ''}">${esc(won(cell.final, { short: true }))}${r.wait ? `<br><span class="${d >= 0 ? 'pos' : 'neg'}" style="font-size:11px">${esc(won(d, { sign: true, short: true }))}</span>` : ''}</td>`;
+    }).join('')}</tr>`).join('');
+    const baseCol = scenarios.findIndex((g) => round(g) === round(i.appreciation));
+    const winner = t.grid.filter((r) => r.cells[baseCol].feasible).reduce((a, b) => (b.cells[baseCol].final > a.cells[baseCol].final ? b : a));
+    tab.innerHTML = `
+      <div class="card">
+        <h3>기본 가정에서는 ${winner.wait ? `${winner.wait}년 기다렸다 사는 편` : '지금 사는 편'}이 유리합니다</h3>
+        <p class="muted">${i.years}년 뒤 같은 시점의 순자산입니다. 기다리는 동안은 임차하며 차액을 투자하고, 매수 시점의 집값·대출한도·부대비용을 다시 계산합니다. 대기 중 금리 변화 ${i.rateChange >= 0 ? '+' : ''}${(i.rateChange * 100).toFixed(2)}%p 가정(입력 패널에서 변경).</p>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>시나리오 (연 집값 상승률)</th>${head}</tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+        <p class="muted" style="font-size:12px">강조된 칸이 각 시나리오에서 가장 유리한 시점입니다. 작은 숫자는 지금 매수 대비 차이입니다.</p>
+      </div>`;
+  }
+
+  // ── 실거래가 자동 조회 ─────────────────────────────────────────────────
+  let lawdTouched = false;
+  async function initApi() {
+    if (!/^https?:$/.test(location.protocol)) return;
+    try {
+      const r = await fetch('api/health');
+      if (!r.ok) return;
+      const h = await r.json();
+      if (!h.ok) return;
+      $('apiForm').hidden = false;
+      $('apiKeyWrap').hidden = !!h.hasKey;
+      $('apiStatus').textContent = h.hasKey
+        ? '서버에 인증키가 설정되어 있습니다. 시군구와 단지명을 확인하고 불러오세요.'
+        : '공공데이터포털(data.go.kr)에서 "국토교통부_아파트 매매 실거래가 자료"를 활용신청하고 받은 일반 인증키를 입력하세요. 키는 이 브라우저에만 저장됩니다.';
+      try { $('apiKey').value = localStorage.getItem('rea-api-key') || ''; } catch (_) { /* 무시 */ }
+    } catch (_) { /* 서버 없음: CSV만 사용 */ }
+  }
+  function recentMonths(n) {
+    const out = [];
+    const d = new Date();
+    for (let k = 0; k < n; k++) {
+      const x = new Date(d.getFullYear(), d.getMonth() - k, 1);
+      out.push(`${x.getFullYear()}${String(x.getMonth() + 1).padStart(2, '0')}`);
+    }
+    return out;
+  }
+  async function fetchRtms() {
+    const lawd = $('apiLawd').value.trim();
+    const status = $('apiStatus');
+    if (!/^\d{5}$/.test(lawd)) { status.textContent = '시군구 코드는 5자리 숫자입니다 (예: 마포구 11440).'; return; }
+    const key = $('apiKey').value.trim();
+    try { if (key) localStorage.setItem('rea-api-key', key); } catch (_) { /* 무시 */ }
+    const months = recentMonths(Number($('apiMonths').value));
+    const btn = $('apiFetch');
+    btn.disabled = true;
+    const all = [];
+    let done = 0, failed = null;
+    const queue = months.slice();
+    const worker = async () => {
+      while (queue.length && !failed) {
+        const ym = queue.shift();
+        try {
+          const res = await fetch(`api/rtms?lawd=${lawd}&ym=${ym}${key ? `&key=${encodeURIComponent(key)}` : ''}`);
+          const text = await res.text();
+          if (!res.ok) throw new Error(text);
+          all.push(...E.parseRtmsXml(text).items);
+        } catch (err) { failed = err; }
+        status.textContent = `불러오는 중 ${++done} / ${months.length}개월`;
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    btn.disabled = false;
+    if (failed) { status.textContent = `불러오지 못했습니다: ${failed.message}. 인증키와 활용신청 승인 여부를 확인하세요.`; return; }
+    const name = $('apiName').value.trim();
+    const picked = name ? all.filter((t) => t.name.includes(name)) : all;
+    if (!picked.length) {
+      const counts = {};
+      all.forEach((t) => { counts[t.name] = (counts[t.name] || 0) + 1; });
+      const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([n, k]) => `${n}(${k})`).join(', ');
+      status.textContent = `"${name}" 거래가 없습니다. 거래가 많은 단지: ${top || '없음'}`;
+      return;
+    }
+    txs = picked.sort((a, b) => a.date.localeCompare(b.date));
+    status.textContent = `${name ? `"${name}" ` : ''}거래 ${picked.length}건을 불러왔습니다 (해제거래 제외).`;
+    update();
+  }
+
+  // ── 후보 비교 ─────────────────────────────────────────────────────────
+  const CAND_KEY = 'rea-candidates-v1';
+  let candidates = [];
+  try { candidates = JSON.parse(localStorage.getItem(CAND_KEY) || '[]'); } catch (_) { candidates = []; }
+  const persistCands = () => { try { localStorage.setItem(CAND_KEY, JSON.stringify(candidates)); } catch (_) { /* 무시 */ } };
+  function saveCandidate() {
+    const out = $('candOut');
+    if (candidates.length >= 4) { out.insertAdjacentHTML('afterbegin', '<div class="card"><p class="muted">후보는 4개까지 저장됩니다. 하나를 지우고 다시 저장하세요.</p></div>'); return; }
+    const V = formValues();
+    const i = read(V);
+    const name = $('candName').value.trim() || `${E.region(i.regionId).name} ${won(i.price, { short: true })}`;
+    candidates.push({ id: Date.now(), name, values: V });
+    $('candName').value = '';
+    persistCands();
+    renderCandidates();
+  }
+  function renderCandidates() {
+    const out = $('candOut');
+    if (!candidates.length) { out.innerHTML = '<div class="card"><p class="muted">저장된 후보가 없습니다. 조건을 입력하고 "현재 조건을 후보로 저장"을 누르세요.</p></div>'; return; }
+    const res = candidates.map((cd) => ({ cd, r: compute(read(cd.values)) }));
+    const metrics = [
+      ['종합 점수', (r) => r.v.score, (x) => `${x}점`, 'high'],
+      ['매매가', (r) => r.i.price, won, null],
+      ['대출 가능액', (r) => r.loan, won, 'high'],
+      ['필요 자기자본', (r) => r.need, won, 'low'],
+      ['자금 여유(부족)', (r) => -r.fundingGap, (x) => won(x, { sign: true }), 'high'],
+      ['월 상환액', (r) => r.monthlyPayment, won, 'low'],
+      ['월 소득 대비 상환', (r) => r.monthlyPayment / (r.i.annualIncome / 12), (x) => pct(x), 'low'],
+      ['금리 +2%p 부담률', (r) => r.stress.rateShocks[2].burden, (x) => pct(x), 'low'],
+      ['취득 부대비용', (r) => r.closing.total, won, 'low'],
+      ['연 보유세', (r) => r.holding.total, won, 'low'],
+      ['매수 − 임차 (기본 가정)', (r) => (r.base.feasible ? r.base.diff : NaN), (x) => (isFinite(x) ? won(x, { sign: true }) : '—'), 'high'],
+      ['매수 유리 확률', (r) => (r.base.feasible ? r.mc.buyWinProb : NaN), (x) => pct(x, 0), 'high'],
+      ['손익분기 상승률', (r) => (r.breakeven == null ? Infinity : r.breakeven), (x) => (isFinite(x) ? pct(x, 2) : '25% 초과'), 'low'],
+    ];
+    const head = res.map(({ cd, r }) => `<th class="cand">${esc(cd.name)}<br>${chip(r.v.tone, r.v.label)}<div class="cand-actions"><button type="button" class="ghost" data-load="${cd.id}">불러오기</button><button type="button" class="ghost" data-del="${cd.id}">삭제</button></div></th>`).join('');
+    const rows = metrics.map(([label, get, fmt, better]) => {
+      const vals = res.map(({ r }) => get(r));
+      const valid = vals.filter((v) => isFinite(v));
+      const target = better === 'high' ? Math.max(...valid) : better === 'low' ? Math.min(...valid) : null;
+      return `<tr><td>${label}</td>${vals.map((v) => `<td class="n${res.length > 1 && target != null && v === target ? ' best' : ''}">${esc(fmt(v))}</td>`).join('')}</tr>`;
+    }).join('');
+    out.innerHTML = `<div class="card"><div class="tbl-wrap"><table><thead><tr><th>항목</th>${head}</tr></thead><tbody>
+      <tr><td>지역</td>${res.map(({ r }) => `<td>${esc(r.r.name)}</td>`).join('')}</tr>${rows}</tbody></table></div>
+      <p class="muted" style="font-size:12px">강조된 칸이 해당 항목에서 가장 나은 후보입니다. 후보별로 저장 당시의 소득·현금·가정이 그대로 쓰입니다.</p></div>`;
+  }
+  function applyValues(V) {
+    for (const [k, v] of Object.entries(V)) {
+      const e = $(k);
+      if (!e || e.type === 'file') continue;
+      if (e.type === 'checkbox') e.checked = !!v; else e.value = v;
+    }
+    update();
+  }
+
   // ── 흐름 ──────────────────────────────────────────────────────────────
   let timer = null;
   function update() {
@@ -439,7 +609,8 @@
       return;
     }
     const c = compute(i);
-    renderVerdict(c); renderKpis(c); renderLoan(c); renderCost(c); renderCompare(c); renderRisk(c); renderMarket(c);
+    renderVerdict(c); renderKpis(c); renderLoan(c); renderCost(c); renderCompare(c); renderTiming(c); renderRisk(c); renderMarket(c);
+    if (!lawdTouched) $('apiLawd').value = r.lawd || '';
     persist();
   }
   const schedule = () => { clearTimeout(timer); timer = setTimeout(update, 180); };
@@ -448,6 +619,7 @@
     document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
     document.querySelectorAll('.tab').forEach((t) => { t.hidden = t.id !== 'tab-' + name; });
     try { localStorage.setItem('rea-tab', name); } catch (_) { /* 무시 */ }
+    if (name === 'candidates') renderCandidates();
   }
 
   initRegions();
@@ -484,6 +656,15 @@
   });
   $('csvText').addEventListener('input', (e) => { if (e.target.value.trim()) loadCsv(e.target.value); });
   $('csvSample').addEventListener('click', () => { $('csvText').value = sampleCsv(); loadCsv($('csvText').value); });
+  $('apiLawd').addEventListener('input', () => { lawdTouched = true; });
+  $('apiFetch').addEventListener('click', fetchRtms);
+  $('candSave').addEventListener('click', saveCandidate);
+  $('candOut').addEventListener('click', (e) => {
+    const load = e.target.closest('[data-load]'), del = e.target.closest('[data-del]');
+    if (load) { const cd = candidates.find((x) => String(x.id) === load.dataset.load); if (cd) { applyValues(cd.values); selectTab('loan'); } }
+    if (del) { candidates = candidates.filter((x) => String(x.id) !== del.dataset.del); persistCands(); renderCandidates(); }
+  });
+  initApi();
   let tab = 'loan';
   try { tab = localStorage.getItem('rea-tab') || location.hash.slice(1) || 'loan'; } catch (_) { /* 무시 */ }
   if (!document.getElementById('tab-' + tab)) tab = 'loan';

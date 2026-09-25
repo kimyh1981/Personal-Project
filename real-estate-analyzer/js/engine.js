@@ -545,6 +545,66 @@
     return { base, rows };
   }
 
+  // ── 매수 시점 비교 ────────────────────────────────────────────────────
+  /**
+   * 지금 사기 vs W년 임차 후 사기. 비교 종료 시점(s.years)은 같다.
+   * 대기 기간의 임차 순자산이 그대로 매수 시점의 현금이 된다.
+   * s: simulate 입력, opt: { waits:[0,1,2,3], scenarios:[연 상승률...], rateChange(대기 중 금리 변화),
+   *    loanFor(price, rate) → 대출액, closingFor(price) → 부대비용 }
+   */
+  function timingCompare(s, opt) {
+    const waits = (opt.waits || [0, 1, 2, 3]).filter((w) => w < s.years);
+    const scenarios = opt.scenarios || [s.appreciation];
+    const run = (g, w) => {
+      const base = { ...s, appreciation: g, appreciationPath: null, invPath: null };
+      if (w === 0) {
+        const r = simulate(base);
+        return { final: r.buyFinal, price: s.price, loan: s.loan, feasible: r.feasible };
+      }
+      const renting = simulate({ ...base, years: w });
+      const price = s.price * Math.pow(1 + g, w);
+      const rate = Math.max(0, s.rate + (opt.rateChange || 0));
+      const loan = opt.loanFor(price, rate);
+      const closing = opt.closingFor(price);
+      const grow = Math.pow(1 + s.rentGrowth, w);
+      const later = simulate({
+        ...base, years: s.years - w, cash: renting.rentFinal, price, loan, rate, closing,
+        rentDeposit: s.rentDeposit * grow, rentMonthly: s.rentMonthly * grow, age: (s.age || 40) + w,
+      });
+      // 매수 전 이사비는 이미 임차 시나리오에서 부담했으므로 이사 1회분은 그대로 둔다
+      return { final: later.buyFinal, price, loan, feasible: later.feasible };
+    };
+    return {
+      waits, scenarios,
+      grid: waits.map((w) => ({ wait: w, cells: scenarios.map((g) => ({ g, ...run(g, w) })) })),
+    };
+  }
+
+  // ── 국토부 실거래가 API (RTMSDataSvcAptTrade) XML ────────────────────
+  function parseRtmsXml(xml) {
+    const tag = (src, name) => {
+      const m = src.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`));
+      return m ? m[1].trim() : '';
+    };
+    const code = tag(xml, 'resultCode');
+    if (code && !/^0+$/.test(code)) throw new Error(`API 오류 ${code}: ${tag(xml, 'resultMsg')}`);
+    const items = xml.split('<item>').slice(1).map((chunk) => chunk.split('</item>')[0]);
+    const out = [];
+    for (const it of items) {
+      if (tag(it, 'cdealType') === 'O') continue; // 해제된 거래
+      const price = Number(tag(it, 'dealAmount').replace(/[^0-9]/g, '')) * 1e4;
+      const y = tag(it, 'dealYear'), m = tag(it, 'dealMonth'), d = tag(it, 'dealDay');
+      if (!price || !y) continue;
+      const floor = tag(it, 'floor');
+      out.push({
+        date: `${y}-${m.padStart(2, '0')}-${(d || '1').padStart(2, '0')}`,
+        area: Number(tag(it, 'excluUseAr')) || null, price,
+        name: tag(it, 'aptNm'), floor: floor === '' ? null : Number(floor), dong: tag(it, 'umdNm'),
+      });
+    }
+    return { items: out, totalCount: Number(tag(xml, 'totalCount')) || out.length };
+  }
+
   // ── 스트레스 테스트 ───────────────────────────────────────────────────
   function stressTest(i) {
     // i: loan, rate, termYears, method, monthlyIncome, price, equity
@@ -668,6 +728,6 @@
     pmt, pv, schedule, annualDebtService, loanLimit, policyLoanEligibility,
     generalAcqRate, acquisitionTax, brokerFee, leaseBase, bondCost, closingCosts,
     holdingTax, capitalGainsTax, simulate, breakevenAppreciation, monteCarlo,
-    stressTest, verdict, maxAffordablePrice, sensitivity, parseCsv, parseTransactions, comparables, region,
+    stressTest, verdict, maxAffordablePrice, sensitivity, timingCompare, parseRtmsXml, parseCsv, parseTransactions, comparables, region,
   };
 });
