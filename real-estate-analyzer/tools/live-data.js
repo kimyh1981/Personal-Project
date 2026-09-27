@@ -30,9 +30,8 @@ function loadConfig() {
     lawOc: pick('lawOc', 'LAW_OC', ''),
     kakaoKey: pick('kakaoKey', 'KAKAO_REST_KEY', ''), // 카카오 로컬 REST API 키 (좌표·주변 역·학교) // 법제처 국가법령정보 공동활용 OC(가입 이메일 ID)
     newsFeeds: [].concat(pick('newsFeeds', 'NEWS_FEEDS', null) || []).flatMap((x) => String(x).split(',')).map((x) => x.trim()).filter(Boolean),
-    _defaultFeeds: [
-      'https://www.molit.go.kr/USR/NEWS/m_71/rss.jsp', // 정책브리핑(korea.kr) RSS는 서비스 중단
-    ],
+    // 국토부 보도자료는 정책브리핑 보도자료 목록으로 확인한다. 추가 RSS가 있으면 newsFeeds에 넣는다.
+    _defaultFeeds: [],
     ttl: { landUse: HOUR, redev: 6 * HOUR, regulation: HOUR, ...(file.ttl || {}) },
   };
   if (!cfg.newsFeeds.length) cfg.newsFeeds = cfg._defaultFeeds;
@@ -41,15 +40,18 @@ function loadConfig() {
 
 // ── HTTP ────────────────────────────────────────────────────────────────
 // 3xx는 쿠키를 붙여 최대 3번 따라간다 (국토부 RSS는 쿠키 설정 후 같은 주소로 307).
-function defaultFetch(url, headers, hops = 0, cookie = '') {
+// opts.body가 있으면 폼 POST (정책브리핑 보도자료 목록은 POST 검색).
+function defaultFetch(url, headers, opts = {}) {
+  const { body, hops = 0, cookie = '' } = opts;
   const lib = url.startsWith('https:') ? https : http;
   return new Promise((resolve, reject) => {
-    const h = { 'user-agent': 'real-estate-analyzer/1.0', ...(headers || {}), ...(cookie ? { cookie } : {}) };
-    const req = lib.get(url, { timeout: 15000, headers: h }, (res) => {
+    const h = { 'user-agent': 'Mozilla/5.0 (real-estate-analyzer)', ...(headers || {}), ...(cookie ? { cookie } : {}) };
+    if (body != null) Object.assign(h, { 'content-type': 'application/x-www-form-urlencoded', 'content-length': Buffer.byteLength(body) });
+    const req = lib.request(url, { method: body != null ? 'POST' : 'GET', timeout: 15000, headers: h }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && hops < 3) {
         res.resume();
         const jar = [cookie, ...[].concat(res.headers['set-cookie'] || []).map((c) => c.split(';')[0])].filter(Boolean).join('; ');
-        return resolve(defaultFetch(new URL(res.headers.location, url).href, headers, hops + 1, jar));
+        return resolve(defaultFetch(new URL(res.headers.location, url).href, headers, { hops: hops + 1, cookie: jar }));
       }
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
@@ -57,6 +59,7 @@ function defaultFetch(url, headers, hops = 0, cookie = '') {
     });
     req.on('error', reject);
     req.on('timeout', () => req.destroy(new Error('응답 시간 초과')));
+    req.end(body != null ? body : undefined);
   });
 }
 let fetcher = defaultFetch;
@@ -263,6 +266,46 @@ function parseLawSearch(json) {
 }
 const ymdToIso = (s) => (/^\d{8}$/.test(s) ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : null);
 
+// 정책브리핑(korea.kr) 전 부처 보도자료 목록. RSS가 중단돼 목록 화면을 기간 검색으로 읽는다.
+const PRESS_URL = 'https://www.korea.kr/briefing/pressReleaseList.do';
+function parsePressList(html) {
+  const text = (x) => x.replace(/<[^>]+>/g, ' ').replace(/&middot;/g, '·').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim();
+  const out = [];
+  const re = /<a href="(\/briefing\/pressReleaseView\.do\?newsId=(\d+)[^"]*)"[^>]*>\s*<span class="text">\s*<strong>([\s\S]*?)<\/strong>[\s\S]*?<span class="source">\s*<span>([\d.]+)<\/span>\s*<span>([^<]*)<\/span>/g;
+  for (const m of String(html).matchAll(re)) {
+    out.push({ id: m[2], title: text(m[3]), date: m[4].replace(/\./g, '-'), ministry: text(m[5]), link: 'https://www.korea.kr/briefing/pressReleaseView.do?newsId=' + m[2] });
+  }
+  return out;
+}
+async function withRetry(fn, n = 3) {
+  let last;
+  for (let k = 0; k < n; k++) {
+    try { return await fn(); } catch (err) {
+      last = err;
+      if (!err.retry) break; // 연결 끊김만 다시 시도 (정책브리핑은 가끔 연결을 끊는다)
+      await new Promise((r) => setTimeout(r, 1000 * (k + 1)));
+    }
+  }
+  throw last;
+}
+async function pressReleases(since, until, maxPages = 80) {
+  const seen = new Map();
+  for (let page = 1; page <= maxPages; page++) {
+    const form = `pageIndex=${page}&period=direct&startDate=${since}&endDate=${until}&srchWord=&repCodeType=&repCode=`;
+    const items = await withRetry(async () => {
+      let r;
+      try { r = await fetcher(PRESS_URL, null, { body: form }); } catch (err) { err.retry = true; throw err; }
+      if (r.status >= 400) throw new Error(`HTTP ${r.status}`);
+      if (!r.body) throw Object.assign(new Error('빈 응답'), { retry: true });
+      return parsePressList(r.body);
+    });
+    const fresh = items.filter((it) => !seen.has(it.id) && it.date >= since);
+    fresh.forEach((it) => seen.set(it.id, it));
+    if (!fresh.length) break;
+  }
+  return [...seen.values()];
+}
+
 /**
  * 기준일(policy.asOf) 이후 규제 관련 보도자료와 시행된 법령 개정을 찾는다.
  * ok=true는 '모든 출처를 확인했고 변경이 없다'는 뜻. 하나라도 확인 못 하면 ok=false.
@@ -272,6 +315,15 @@ async function regulationCheck(cfg, fresh, asOf = P.asOf) {
     const since = Date.parse(asOf + 'T00:00:00+09:00');
     const today = new Date().toISOString().slice(0, 10);
     const changes = [], errors = [], checked = [];
+    try {
+      // 목록의 기간 검색은 게시일 기준이라 며칠 앞부터 읽고, 기준일 이후 자료만 본다
+      const from = new Date(since - 3 * 86400e3).toISOString().slice(0, 10);
+      const list = (await pressReleases(from, today)).filter((it) => it.date >= asOf);
+      checked.push(`정책브리핑 보도자료 ${list.length}건`);
+      for (const it of list) {
+        if (REG_KEYWORDS.test(it.title)) changes.push({ kind: '보도·고시', title: it.title, date: it.date, link: it.link, ministry: it.ministry });
+      }
+    } catch (err) { errors.push(`정책브리핑 보도자료: ${err.message}`); }
     for (const feed of cfg.newsFeeds) {
       try {
         const items = parseRss(await getText(feed));
@@ -359,12 +411,12 @@ function sourcesStatus(cfg) {
     { id: 'redevSeoul', name: '서울 정비사업 진행단계 (서울시 정비사업 정보몽땅)', configured: true, how: '키 없음 (열린데이터광장 서비스명을 넣으면 그쪽을 우선 사용)', last: s('redevSeoul') },
     { id: 'redevGyeonggi', name: '경기 정비사업 추진현황 (경기데이터드림)', configured: !!(cfg.ggKey && cfg.ggRedevService), how: 'GG_OPEN_API_KEY + GG_REDEV_SERVICE', last: s('redevGyeonggi') },
     { id: 'nearby', name: '단지 좌표·주변 역·초등학교 (카카오 로컬)', configured: !!cfg.kakaoKey, how: 'developers.kakao.com REST API 키 (KAKAO_REST_KEY)', last: s('nearby') || s('geo') },
-    { id: 'regulation', name: '규제 고시·법령 변경 감지 (국토부 RSS, 법제처)', configured: true, how: 'RSS는 키 없음, 법령은 LAW_OC + 법제처 신청에 서버 IP 등록', last: s('regulation') },
+    { id: 'regulation', name: '규제 고시·법령 변경 감지 (정책브리핑 보도자료, 국토부 RSS, 법제처)', configured: true, how: 'RSS는 키 없음, 법령은 LAW_OC + 법제처 신청에 서버 IP 등록', last: s('regulation') },
   ];
 }
 
 module.exports = {
   loadConfig, setFetcher, clearCache, track, NotConfigured,
   landUse, redevSearch, regulationCheck, geocode, nearby, sourcesStatus,
-  parseVworldSearch, parseLandUse, classifyZones, parseSeoulRows, parseGgRows, normalizeRedevRow, parseRss, parseLawSearch, parseCleanupList,
+  parseVworldSearch, parseLandUse, classifyZones, parseSeoulRows, parseGgRows, normalizeRedevRow, parseRss, parseLawSearch, parseCleanupList, parsePressList, pressReleases,
 };
