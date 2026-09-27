@@ -22,5 +22,14 @@ const live = require('./live-data.js');
   fs.writeFileSync(path.join(out, 'data', 'regulation.json'), JSON.stringify(r, null, 1));
   console.log(`규제 스냅샷: ${r.checked.join(', ') || '확인 없음'} · 변경 ${r.changes.length}건 · 오류 ${r.errors.length}건`);
   r.errors.forEach((e) => console.log('  오류: ' + e));
+
+  // 서울 정비사업 전체 목록: 정보몽땅은 CORS 헤더가 중복돼 브라우저가 직접 못 읽는다
+  try {
+    const rows = await Promise.race([live.cleanupAll(), new Promise((_, rej) => setTimeout(() => rej(new Error('시간 초과')), 90e3).unref())]);
+    const cols = ['자치구', '사업구분', '사업장명', '대표지번', '진행단계'];
+    const body = { fetchedAt: new Date().toISOString(), source: '서울시 정비사업 정보몽땅', cols, rows: rows.map((x) => cols.map((c) => x[c] || '')) };
+    fs.writeFileSync(path.join(out, 'data', 'redev-seoul.json'), JSON.stringify(body));
+    console.log(`서울 정비사업 스냅샷: ${rows.length}곳`);
+  } catch (err) { console.log('서울 정비사업 스냅샷 실패: ' + err.message); }
   process.exit(0); // 남은 연결이 있어도 배포를 막지 않는다
 })();

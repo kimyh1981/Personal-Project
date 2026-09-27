@@ -94,7 +94,10 @@
 
   // ── 최신 공공데이터 상태 ──────────────────────────────────────────────
   // available: 로컬 서버가 있어 조회 가능, regulation: 규제 변경 감지 결과, landUse: 주소별 필지 조회 결과
-  const liveState = { available: false, regulation: null, regulationError: '', landUse: {}, sources: [], redev: null };
+  // direct: 서버가 없어 브라우저가 공공데이터를 직접 조회 (js/direct.js)
+  const liveState = { available: false, direct: false, regulation: null, regulationError: '', landUse: {}, sources: [], redev: null };
+  const liveOn = () => liveState.available || liveState.direct;
+  const apiFetch = (u, o) => (liveState.direct && window.REA_DIRECT ? window.REA_DIRECT.fetch(u) : fetch(u, o));
   function liveFor(V) {
     const addr = String(V.parcelAddress || '').trim();
     return {
@@ -104,7 +107,7 @@
     };
   }
   async function liveGet(pathQs) {
-    const r = await fetch(pathQs, { cache: 'no-store' });
+    const r = await apiFetch(pathQs, { cache: 'no-store' });
     const j = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
     if (!r.ok) throw Object.assign(new Error(j.error || `HTTP ${r.status}`), { code: j.code });
     return j;
@@ -131,9 +134,7 @@
     try { if (vwKey) localStorage.setItem('rea-vworld-key', vwKey); } catch (_) { /* 무시 */ }
     st.textContent = '조회 중…';
     try {
-      const r = direct
-        ? await window.REA_VWORLD.lookup(addr, vwKey, location.hostname)
-        : await liveGet(`api/landuse?address=${encodeURIComponent(addr)}${fresh ? '&fresh=1' : ''}`);
+      const r = await liveGet(`api/landuse?address=${encodeURIComponent(addr)}${fresh ? '&fresh=1' : ''}`);
       liveState.landUse[addr] = r;
       st.textContent = `${r.address} · ${r.zones.length ? r.zones.join(', ') : '지역지구 없음'} (${fmtTime(r.fetchedAt)} 조회)`;
     } catch (err) {
@@ -144,7 +145,7 @@
   }
   async function fetchRedev() {
     const st = $('redevStatus'), pick = $('redevPick');
-    if (!liveState.available) { st.textContent = '로컬 서버(npm start)로 열어야 조회할 수 있습니다.'; return; }
+    if (!liveOn()) { st.textContent = '로컬 서버(npm start)로 열어야 조회할 수 있습니다.'; return; }
     const r = E.region($('regionId').value);
     const sido = r.group.startsWith('서울') ? '서울' : r.group.startsWith('경기') ? '경기' : null;
     if (!sido) { st.textContent = '정비사업 조회는 서울·경기 지역만 지원합니다.'; return; }
@@ -954,9 +955,25 @@
       }
     } catch (_) { /* 서버 없음: CSV만 사용 */ }
   }
+  // 서버가 없으면 브라우저 직접 조회 모드: 인증키는 이 기기에만 저장
+  async function initDirect() {
+    if (!window.REA_DIRECT || !/^https?:$/.test(location.protocol)) return;
+    liveState.direct = true;
+    const K = window.REA_DIRECT.keys;
+    $('apiForm').hidden = false;
+    $('apiKeyWrap').hidden = false;
+    $('kakaoKeyWrap').hidden = false;
+    $('apiKey').value = K.get('dataGoKr');
+    $('kakaoKey').value = K.get('kakao');
+    $('apiStatus').textContent = '브라우저에서 공공데이터를 직접 조회합니다. 공공데이터포털 인증키(실거래가)와 카카오 REST 키(단지 위치·역·학교)를 넣으면 최적지 추천도 실시간으로 됩니다. 키는 이 기기에만 저장됩니다.';
+    const save = async () => { K.set('dataGoKr', $('apiKey').value.trim()); K.set('kakao', $('kakaoKey').value.trim()); await refreshSources(); update(); };
+    $('apiKey').addEventListener('change', save);
+    $('kakaoKey').addEventListener('change', save);
+    await refreshSources();
+  }
   async function initApi() {
     await initServer();
-    if (!liveState.available) await loadRegulationSnapshot();
+    if (!liveState.available) { await initDirect(); await loadRegulationSnapshot(); }
   }
   function recentMonths(n) {
     const out = [];
@@ -983,7 +1000,7 @@
       while (queue.length && !failed) {
         const ym = queue.shift();
         try {
-          const res = await fetch(`api/rtms?lawd=${lawd}&ym=${ym}${key ? `&key=${encodeURIComponent(key)}` : ''}`);
+          const res = await apiFetch(`api/rtms?lawd=${lawd}&ym=${ym}${key ? `&key=${encodeURIComponent(key)}` : ''}`);
           const text = await res.text();
           if (!res.ok) throw new Error(text);
           all.push(...E.parseRtmsXml(text).items);
@@ -1129,7 +1146,7 @@
   async function workplaceCoords(st) {
     if (st.work === 'none') return null;
     if (st.work !== 'custom') return GEO.WORKPLACES.find((w) => w.id === st.work).at;
-    if (!st.workAddr || !liveState.available) return null;
+    if (!st.workAddr || !liveOn()) return null;
     try { const g = await liveGet(`api/geo?q=${encodeURIComponent(st.workAddr)}`); return [g.lat, g.lng]; } catch (_) { return null; }
   }
 
@@ -1148,28 +1165,33 @@
         jobs.push({ rid, url: `api/rtms-rent?lawd=${r.lawd}&ym=${ym}`, kind: 'rents' });
       }
     }
-    let done = 0, failed = null;
+    // 일부 달이 실패해도 나머지로 추천한다 (인증키 오류처럼 모두 실패하면 중단)
+    const total = jobs.length;
+    let done = 0, okCount = 0, lastErr = null;
+    const failedJobs = [];
     const worker = async () => {
-      while (jobs.length && !failed) {
+      while (jobs.length) {
         const j = jobs.shift();
         try {
-          const res = await fetch(j.url + (key ? `&key=${encodeURIComponent(key)}` : ''));
+          const res = await apiFetch(j.url + (key ? `&key=${encodeURIComponent(key)}` : ''));
           const text = await res.text();
           if (!res.ok) throw new Error(text.slice(0, 120));
           out[j.rid][j.kind].push(...(j.kind === 'sales' ? E.parseRtmsXml(text).items : E.parseRtmsRentXml(text).items));
-        } catch (err) { failed = err; }
-        status(`실거래 불러오는 중 ${++done}건`);
+          okCount++;
+        } catch (err) { lastErr = err; failedJobs.push(j); }
+        status(`실거래 불러오는 중 ${++done} / ${total}건`);
       }
     };
-    await Promise.all([worker(), worker(), worker(), worker()]);
-    if (failed) throw failed;
+    await Promise.all([worker(), worker(), worker()]);
+    if (!okCount) throw lastErr || new Error('실거래를 불러오지 못했습니다');
+    out._failed = failedJobs.length;
     return out;
   }
 
   // 단지 좌표·주변 역·학교 (카카오 키가 있을 때만)
   async function enrich(list, status) {
     const src = (liveState.sources || []).find((x) => x.id === 'nearby');
-    if (!liveState.available || !src || !src.configured) return false;
+    if (!liveOn() || !src || !src.configured) return false;
     let k = 0;
     const queue = list.slice();
     const worker = async () => {
@@ -1219,7 +1241,7 @@
     if (!st.regions.length && source !== 'csv') { status('찾을 지역을 하나 이상 고르세요.'); return; }
     btn.disabled = true;
     try {
-      let data;
+      let data, partial = 0;
       if (source === 'demo') data = (() => { const d = RECO.demoData(st.regions, 11, Object.fromEntries(st.regions.map((r) => [r, E.region(r).name]))); return Object.fromEntries(st.regions.map((r) => [r, { sales: d.sales[r], rents: d.rents[r] }])); })();
       else if (source === 'csv') {
         data = {};
@@ -1233,8 +1255,11 @@
           }
         }
       } else {
-        if (!liveState.available) { status('실시간 찾기는 로컬 서버(npm start)로 열어야 합니다. 지금은 CSV를 올리거나 예시 데이터로 볼 수 있습니다.'); return; }
+        if (!liveOn()) { status('실시간 찾기는 로컬 서버(npm start)로 열어야 합니다. 지금은 CSV를 올리거나 예시 데이터로 볼 수 있습니다.'); return; }
+        if (liveState.direct && !window.REA_DIRECT.keys.get('dataGoKr')) { status('실거래가 탭에서 공공데이터포털 인증키를 넣으면 실시간으로 찾습니다.'); return; }
         data = await collectLive(st, status);
+        partial = data._failed || 0;
+        delete data._failed;
       }
       const work = await workplaceCoords(st);
       const thisYear = new Date().getFullYear();
@@ -1256,7 +1281,7 @@
       const res = RECO.rank(cands, (c) => analyzeCandidate(c, baseV), { purpose: $('purpose').value, thisYear, limit: 12 });
       recoState.result = { ...res, total, source, enriched, work: st.work, analyzedAt: new Date().toISOString() };
       renderReco();
-      status('');
+      status(partial ? `실거래 ${partial}건(월·지역 단위)은 조회에 실패해 나머지 거래로 추천했습니다. 다시 누르면 새로 조회합니다.` : '');
     } catch (err) {
       status(`찾지 못했습니다: ${err.message}`);
     } finally {
