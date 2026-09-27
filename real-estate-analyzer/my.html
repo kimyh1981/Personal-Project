@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>내 맞춤 추천 · 실거주 매수 판단기</title>
+<meta name="theme-color" content="#f1f3f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="robots" content="noindex">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body class="my-page">
+<div class="app">
+  <header class="masthead">
+    <div>
+      <p class="eyebrow"><a href="./">← 매수 판단기</a> · 매주 월요일 서울 실거래로 갱신</p>
+      <h1 id="myTitle">내 맞춤 추천</h1>
+    </div>
+    <p class="lede" id="myLede">고정한 내 조건으로 서울 단지를 1~5순위 기준에 맞춰 나눕니다. 조건은 이 기기에만 저장되고, 공개 사이트에는 서울 시장 데이터만 올라갑니다.</p>
+  </header>
+
+  <main class="my-main">
+    <div class="card" id="myStatus"><p class="muted">불러오는 중…</p></div>
+    <nav class="tier-nav" id="tierNav" aria-label="순위 바로가기"></nav>
+    <div id="myTiers"></div>
+
+    <details class="card" id="myProfileCard">
+      <summary><h3>내 기준 (이 기기에만 저장)</h3></summary>
+      <form id="myProfile" class="panel my-form" autocomplete="off">
+        <fieldset data-footer="두 채를 모두 판 뒤 무주택 상태에서 서울 1주택을 산다고 봅니다. 매도 중개보수는 자동 계산합니다.">
+          <legend><span>보유 주택 (매도 예정)</span></legend>
+          <div id="homesWrap"></div>
+          <label class="f">매도 양도세 예상 <span class="unit">만원</span><input id="p_cgtReserve" type="number" step="100"></label>
+          <label class="f">남겨 둘 비상금 <span class="unit">만원</span><input id="p_cashReserve" type="number" step="100"></label>
+        </fieldset>
+        <fieldset data-footer="1순위는 기본 한도, 최대 한도까지 허용. 2순위는 기본 한도의 비율까지. 5순위는 고소득 한도.">
+          <legend><span>상환 능력</span></legend>
+          <label class="f">월 상환 기본 <span class="unit">만원</span><input id="p_pay" type="number" step="10"></label>
+          <label class="f">월 상환 최대 <span class="unit">만원</span><input id="p_payMax" type="number" step="10"></label>
+          <label class="f">2순위 상환 비율 <span class="unit">배</span><input id="p_payPlusRatio" type="number" step="0.1"></label>
+          <label class="f">5순위 월 상환 <span class="unit">만원</span><input id="p_payHigh" type="number" step="50"></label>
+          <label class="f">세전 연소득 <span class="unit">만원 · DSR 확인, 비우면 생략</span><input id="p_annualIncome" type="number" step="100"></label>
+          <label class="f">새 주담대 금리 <span class="unit">%</span><input id="p_loanRate" type="number" step="0.1"></label>
+          <label class="f">추가 자금 금리 <span class="unit">%</span><input id="p_plusRate" type="number" step="0.1"></label>
+        </fieldset>
+        <fieldset data-footer="60세에 집을 줄여 옮기고 차액을 인출률로 쓰거나 주택연금을 받는 것 중 큰 금액을 노후 월소득으로 봅니다. 모두 현재 돈 가치입니다.">
+          <legend><span>노후 기준</span></legend>
+          <label class="f">이름 <span class="unit">화면 인사에만 사용</span><input id="p_name" type="text"></label>
+          <label class="f">현재 나이 <span class="unit">만</span><input id="p_age" type="number" step="1"></label>
+          <label class="f">노후 시작 나이 <span class="unit">만</span><input id="p_targetAge" type="number" step="1"></label>
+          <label class="f">노후 월 생활비 <span class="unit">만원 · 현재 가치</span><input id="p_retireNeed" type="number" step="10"></label>
+          <label class="f">60세 이후 월 소득 <span class="unit">만원 · 3순위 가정</span><input id="p_postIncome" type="number" step="10"></label>
+          <label class="f">노후에 옮겨 살 집 <span class="unit">만원 · 현재 가치</span><input id="p_downsizeHome" type="number" step="1000"></label>
+          <label class="f">과거 상승률 보정 <span class="unit">%p · 음수면 보수적</span><input id="p_growthAdjust" type="number" step="0.5"></label>
+          <label class="f">최소 전용면적 <span class="unit">㎡</span><input id="p_minArea" type="number" step="1"></label>
+        </fieldset>
+      </form>
+    </details>
+
+    <div class="card">
+      <h3>계산 방법</h3>
+      <ul class="plain" id="myMethod"></ul>
+    </div>
+  </main>
+</div>
+<script src="js/policy.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/geo.js"></script>
+<script src="js/tiers.js"></script>
+<script src="js/my.js"></script>
+</body>
+</html>
