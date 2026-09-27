@@ -42,6 +42,8 @@ jobs:
         working-directory: real-estate-analyzer
         timeout-minutes: 4
         continue-on-error: true
+        env:
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
         run: node tools/snapshot.js ../_site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

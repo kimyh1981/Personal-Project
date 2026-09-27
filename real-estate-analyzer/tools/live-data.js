@@ -267,6 +267,21 @@ function parseLawSearch(json) {
     promulgated: l['공포일자'] || '',
   }));
 }
+// 공공데이터포털 법제처_국가법령정보 공유서비스 (XML)
+const LAW_DATA_GO = 'https://apis.data.go.kr/1170000/law/lawSearchList.do';
+function parseLawSearchXml(xml) {
+  const s = String(xml);
+  const tag = (x, n) => { const m = x.match(new RegExp(`<${n}>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</${n}>`)); return m ? m[1].trim() : ''; };
+  if (!/<LawSearch/.test(s)) {
+    const msg = tag(s, 'returnAuthMsg') || tag(s, 'errMsg') || tag(s, 'resultMsg');
+    throw new Error(`법제처(공공데이터포털) 오류: ${msg || '응답 형식 오류'}`);
+  }
+  const code = tag(s, 'resultCode');
+  if (code && code !== '00') throw new Error(`법제처(공공데이터포털) 오류 ${code}: ${tag(s, 'resultMsg')}`);
+  return [...s.matchAll(/<law id="[^"]*">([\s\S]*?)<\/law>/g)].map((m) => ({
+    name: tag(m[1], '법령명한글'), enforced: tag(m[1], '시행일자'), promulgated: tag(m[1], '공포일자'),
+  }));
+}
 const ymdToIso = (s) => (/^\d{8}$/.test(s) ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : null);
 
 // 정책브리핑(korea.kr) 전 부처 보도자료 목록. RSS가 중단돼 목록 화면을 기간 검색으로 읽는다.
@@ -337,21 +352,32 @@ async function regulationCheck(cfg, fresh, asOf = P.asOf) {
         }
       } catch (err) { errors.push(`${feed}: ${err.message}`); }
     }
-    if (cfg.lawOc) {
+    // 법령 시행일: 공공데이터포털의 법제처 API(인증키만, IP 등록 불필요)를 우선, 없으면 법제처 OC
+    const viaDataGo = !!cfg.dataGoKrKey;
+    if (viaDataGo || cfg.lawOc) {
       for (const name of LAWS) {
         try {
-          const list = parseLawSearch(await getJson(`https://www.law.go.kr/DRF/lawSearch.do?OC=${encodeURIComponent(cfg.lawOc)}&target=law&type=JSON&display=5&query=${encodeURIComponent(name)}`));
+          const list = viaDataGo
+            ? await withRetry(async () => {
+              let r;
+              try { r = await fetcher(`${LAW_DATA_GO}?serviceKey=${encodeURIComponent(cfg.dataGoKrKey)}&target=law&numOfRows=30&pageNo=1&query=${encodeURIComponent(name)}`); } catch (err) { err.retry = true; throw err; }
+              if (r.status >= 400) throw new Error(`HTTP ${r.status}`);
+              if (!r.body) throw Object.assign(new Error('빈 응답'), { retry: true });
+              return parseLawSearchXml(r.body);
+            })
+            : parseLawSearch(await getJson(`https://www.law.go.kr/DRF/lawSearch.do?OC=${encodeURIComponent(cfg.lawOc)}&target=law&type=JSON&display=5&query=${encodeURIComponent(name)}`));
           checked.push('법제처:' + name);
-          const hit = list.find((l) => l.name === name) || list[0];
-          const eff = hit && ymdToIso(hit.enforced);
+          const hit = list.find((l) => l.name === name);
+          if (!hit) throw new Error('검색 결과에 해당 법령이 없음');
+          const eff = ymdToIso(hit.enforced);
           if (eff && eff > asOf && eff <= today) changes.push({ kind: '법령 시행', title: `${hit.name} 개정 시행`, date: eff, link: 'https://www.law.go.kr/법령/' + encodeURIComponent(hit.name) });
           else if (eff && eff > today) changes.push({ kind: '법령 시행 예정', title: `${hit.name} 개정 (시행 예정)`, date: eff, link: 'https://www.law.go.kr/법령/' + encodeURIComponent(hit.name), upcoming: true });
         } catch (err) {
           errors.push(`법제처 ${name}: ${err.message}`);
-          if (/거부/.test(err.message)) break; // 인증 실패는 모든 법령이 같으므로 한 번만
+          if (/거부|SERVICE_KEY|등록되지/.test(err.message)) break; // 인증 실패는 모든 법령이 같으므로 한 번만
         }
       }
-    } else errors.push('법제처 OC(LAW_OC) 미설정 — 법령 시행일 확인 생략');
+    } else errors.push('법제처 조회 키 미설정 (DATA_GO_KR_KEY 또는 LAW_OC) — 법령 시행일 확인 생략');
     const ok = errors.length === 0;
     track('regulation', ok, ok ? '' : errors.join(' / '));
     changes.sort((a, b) => String(b.date).localeCompare(String(a.date)));
@@ -414,12 +440,12 @@ function sourcesStatus(cfg) {
     { id: 'redevSeoul', name: '서울 정비사업 진행단계 (서울시 정비사업 정보몽땅)', configured: true, how: '키 없음 (열린데이터광장 서비스명을 넣으면 그쪽을 우선 사용)', last: s('redevSeoul') },
     { id: 'redevGyeonggi', name: '경기 정비사업 추진현황 (경기데이터드림)', configured: !!(cfg.ggKey && cfg.ggRedevService), how: 'GG_OPEN_API_KEY + GG_REDEV_SERVICE', last: s('redevGyeonggi') },
     { id: 'nearby', name: '단지 좌표·주변 역·초등학교 (카카오 로컬)', configured: !!cfg.kakaoKey, how: 'developers.kakao.com REST API 키 (KAKAO_REST_KEY)', last: s('nearby') || s('geo') },
-    { id: 'regulation', name: '규제 고시·법령 변경 감지 (정책브리핑 보도자료, 국토부 RSS, 법제처)', configured: true, how: 'RSS는 키 없음, 법령은 LAW_OC + 법제처 신청에 서버 IP 등록', last: s('regulation') },
+    { id: 'regulation', name: '규제 고시·법령 변경 감지 (정책브리핑 보도자료, 국토부 RSS, 법제처)', configured: true, how: '보도자료는 키 없음, 법령은 DATA_GO_KR_KEY (공공데이터포털 법제처 API 활용신청)', last: s('regulation') },
   ];
 }
 
 module.exports = {
   loadConfig, setFetcher, clearCache, track, NotConfigured,
   landUse, redevSearch, regulationCheck, geocode, nearby, sourcesStatus,
-  parseVworldSearch, parseLandUse, classifyZones, parseSeoulRows, parseGgRows, normalizeRedevRow, parseRss, parseLawSearch, parseCleanupList, parsePressList, pressReleases,
+  parseVworldSearch, parseLandUse, classifyZones, parseSeoulRows, parseGgRows, normalizeRedevRow, parseRss, parseLawSearch, parseCleanupList, parsePressList, pressReleases, parseLawSearchXml,
 };
