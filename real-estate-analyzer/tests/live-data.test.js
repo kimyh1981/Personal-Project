@@ -145,6 +145,18 @@ test('규제 변경 감지: 빈 RSS는 확인 실패, 법제처 인증 거부는
   assert.equal(calls.filter((u) => /lawSearch/.test(u)).length, 1);
 });
 
+test('규제 변경 감지: 정책브리핑 보도자료 목록에서 기준일 이후 규제 자료를 찾는다', async () => {
+  const item = (id, title, date, who) => `<li><a href="/briefing/pressReleaseView.do?newsId=${id}&amp;pageIndex=1"><span class="text"><strong>${title}</strong><span class="lead">요약</span><span class="source"><span>${date}</span><span>${who}</span></span></span></a></li>`;
+  const html = item(1, '토지거래허가구역 &middot; 실거주 유예 연장', '2026.09.26', '국토교통부') + item(2, '도시·지역혁신 박람회', '2026.09.26', '국토교통부') + item(3, '투기과열지구 지정 (옛 자료)', '2026.09.23', '국토교통부');
+  const calls = mock([[/korea\.kr\/briefing\/pressReleaseList/, html]]);
+  const r = await L.regulationCheck(cfg({ lawOc: '', newsFeeds: [] }), false, '2026-09-25');
+  assert.deepEqual(r.changes.map((c) => c.title), ['토지거래허가구역 · 실거주 유예 연장']);
+  assert.equal(r.changes[0].ministry, '국토교통부');
+  assert.equal(r.changes[0].link, 'https://www.korea.kr/briefing/pressReleaseView.do?newsId=1');
+  assert.ok(r.checked.includes('정책브리핑 보도자료 2건'));
+  assert.equal(calls.length, 2); // 두 번째 쪽이 새 자료가 없으면 멈춘다
+});
+
 test('조건 판정: 최신 데이터 우선, 미확인이면 경고', () => {
   const base = {
     purpose: '거주', regionId: 'incheon', propertyType: '아파트', areaM2: 84, price: 5e8, recentTrades: [], jeonse: null,

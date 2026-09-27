@@ -456,12 +456,12 @@
   function freshnessCard() {
     const reg = liveState.regulation;
     let head;
-    if (!liveState.available) head = `${chip('warning', '미확인')} 로컬 서버 없이 열려 있어 최신 공공데이터를 조회하지 못했습니다. 규정 기준일 ${esc(P.asOf)} 값으로 계산합니다.`;
+    if (!liveState.available && !reg) head = `${chip('warning', '미확인')} 로컬 서버 없이 열려 있어 최신 공공데이터를 조회하지 못했습니다. 규정 기준일 ${esc(P.asOf)} 값으로 계산합니다.`;
     else if (!reg) head = `${chip('warning', '확인 실패')} 규제 변경 확인 실패: ${esc(liveState.regulationError || '조회 중')}`;
     else if (reg.changes.some((x) => !x.upcoming)) head = `${chip('critical', '변경 감지')} 기준일 이후 규제 관련 변경이 있습니다. 아래 항목을 확인하세요.`;
-    else head = `${reg.ok ? chip('good', '최신') : chip('warning', '일부 미확인')} ${fmtTime(reg.checkedAt)} 확인 · 기준일 ${esc(reg.asOf)} 이후 규제 변경 ${reg.changes.filter((x) => !x.upcoming).length}건`;
+    else head = `${reg.ok ? chip('good', '최신') : chip('warning', '일부 미확인')} ${fmtTime(reg.checkedAt)} 확인${reg.snapshot ? ' (자동 조회, 6시간마다)' : ''} · 기준일 ${esc(reg.asOf)} 이후 규제 변경 ${reg.changes.filter((x) => !x.upcoming).length}건`;
     const changes = reg && reg.changes.length
-      ? `<ul class="plain">${reg.changes.slice(0, 10).map((x) => `<li>${esc(x.date || '')} · ${esc(x.kind)} · ${x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener">${esc(x.title)}</a>` : esc(x.title)}</li>`).join('')}</ul>` : '';
+      ? `<ul class="plain">${reg.changes.slice(0, 10).map((x) => `<li>${esc(x.date || '')} · ${esc(x.kind)}${x.ministry ? ' · ' + esc(x.ministry) : ''} · ${x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener">${esc(x.title)}</a>` : esc(x.title)}</li>`).join('')}</ul>` : '';
     const rows = liveState.sources.map((src) => `<tr><td>${esc(src.name)}</td><td>${src.configured ? (src.last ? (src.last.ok ? chip('good', '정상') : chip('critical', '실패')) : chip('neutral', '대기')) : chip('warning', '설정 필요')}</td><td class="muted">${src.last ? esc(fmtTime(src.last.at)) + (src.last.detail ? ' · ' + esc(src.last.detail) : '') : esc(src.configured ? '' : src.how)}</td></tr>`).join('');
     return `<div class="card">
       <h3>데이터 최신성</h3>
@@ -919,7 +919,18 @@
 
   // ── 실거래가 자동 조회 ─────────────────────────────────────────────────
   let lawdTouched = false;
-  async function initApi() {
+  // 서버가 없을 때: 배포 작업이 6시간마다 만든 규제 변경 스냅샷을 쓴다 (하루보다 오래되면 쓰지 않음)
+  async function loadRegulationSnapshot() {
+    try {
+      const r = await fetch('data/regulation.json', { cache: 'no-store' });
+      if (!r.ok) return;
+      const j = await r.json();
+      if (!j || !Array.isArray(j.changes) || Date.now() - Date.parse(j.checkedAt) > 36 * 3600e3) return;
+      liveState.regulation = j;
+      update();
+    } catch (_) { /* 스냅샷 없음 */ }
+  }
+  async function initServer() {
     try { $('vworldKey').value = localStorage.getItem('rea-vworld-key') || ''; } catch (_) { /* 무시 */ }
     $('vworldKeyWrap').hidden = false; // 서버가 브이월드 키를 갖고 있으면 아래에서 숨긴다
     if (!/^https?:$/.test(location.protocol)) return;
@@ -942,6 +953,10 @@
         if ($('parcelAddress').value.trim()) fetchLandUse(false);
       }
     } catch (_) { /* 서버 없음: CSV만 사용 */ }
+  }
+  async function initApi() {
+    await initServer();
+    if (!liveState.available) await loadRegulationSnapshot();
   }
   function recentMonths(n) {
     const out = [];
