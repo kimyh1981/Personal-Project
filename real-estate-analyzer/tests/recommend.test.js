@@ -56,6 +56,16 @@ test('순위: 목적별 가중치, 예산 초과·차단 제외, 이유 문구',
   assert.ok(live.ranked.find((r) => r.c.name === '먼 구축').cautions.some((t) => t.includes('65분')));
 });
 
+test('순위: 거래가 1~2건뿐인 단지는 시세 신뢰도가 낮아 점수를 깎고 주의점에 적는다', () => {
+  const base = { regionId: 'seoul-송파구', price: 8 * EOK, area: 84, builtYear: 2015, vsRegion: -0.1, jeonse: 5 * EOK, commuteMin: 30, subwayMin: 6 };
+  const cands = [{ ...base, id: 1, name: '거래 1건', count: 1 }, { ...base, id: 2, name: '거래 2건', count: 2 }, { ...base, id: 3, name: '거래 8건', count: 8 }];
+  const analyze = () => ({ score: 75, blocked: false, fundingGap: 0, surplus: 200e4, net: 800e4, maxPrice: 12 * EOK, privateUsed: 0 });
+  const r = R.rank(cands, analyze, { purpose: '거주', thisYear: 2026 });
+  assert.deepEqual(r.ranked.map((x) => x.c.name), ['거래 8건', '거래 2건', '거래 1건']);
+  assert.match(r.ranked[2].cautions[0], /1건뿐/);
+  assert.ok(!r.ranked[0].cautions.some((t) => /건뿐/.test(t)));
+});
+
 test('예시 데이터는 가상 단지 이름만 쓴다', () => {
   const d = R.demoData(['seoul-마포구'], 3);
   assert.ok(d.sales['seoul-마포구'].length > 20);

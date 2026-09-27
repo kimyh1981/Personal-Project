@@ -149,12 +149,15 @@
         sum += x[k] * wk; wsum += wk;
         parts.push({ key: k, label: LABEL[k], score: x[k], weight: wk });
       }
-      const total = wsum ? Math.round(sum / wsum) : 0;
+      // 거래가 1~2건뿐이면 중위가(시세)를 믿기 어렵다: 점수를 깎고 주의점에 적는다
+      const thin = c.count < 3 ? (c.count <= 1 ? 0.85 : 0.93) : 1;
+      const total = wsum ? Math.round((sum / wsum) * thin) : 0;
       const strengths = parts.filter((p) => p.score >= 70).sort((p, q) => q.score * q.weight - p.score * p.weight).slice(0, 4)
         .map((p) => reasonText(p.key, c, a, age));
       const cautions = parts.filter((p) => p.score < 50).sort((p, q) => p.score * p.weight - q.score * q.weight).slice(0, 3)
         .map((p) => reasonText(p.key, c, a, age));
       if (a.privateUsed > 0) cautions.unshift(`개인 차입 ${man(a.privateUsed)}원이 있어야 살 수 있음 (예산 밖)`);
+      if (thin < 1) cautions.unshift(`최근 거래가 ${c.count}건뿐이라 시세를 믿기 어려움 (호가·주변 단지 확인 필요)`);
       ranked.push({ c, a, total, parts, strengths, cautions });
     }
     ranked.sort((p, q) => q.total - p.total || p.c.price - q.c.price);
