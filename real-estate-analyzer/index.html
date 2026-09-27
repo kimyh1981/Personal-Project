@@ -69,6 +69,7 @@
         <label class="f">공시가격 / 시세 <span class="unit">%</span><input id="publicRatio" type="number" step="1" value="69"></label>
         <div class="f wide live-row">
           <label class="f" style="flex:1">지번 주소 <span class="unit">필지 규제 최신 확인</span><input id="parcelAddress" type="text" placeholder="예: 서울 마포구 아현동 777"></label>
+          <label class="f" id="vworldKeyWrap" hidden>브이월드 인증키 <span class="unit">이 기기에만 저장</span><input id="vworldKey" type="password" autocomplete="off"></label>
           <button type="button" id="landUseFetch" class="ghost">토지이용계획 조회</button>
           <span class="hint wide" id="landUseStatus"></span>
         </div>
@@ -350,6 +351,7 @@
 <script src="js/policy.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/conditions.js"></script>
+<script src="js/vworld.js"></script>
 <script src="js/geo.js"></script>
 <script src="js/recommend.js"></script>
 <script src="js/charts.js"></script>
