@@ -117,6 +117,20 @@ test('규제 변경 감지: 출처를 못 읽으면 ok=false', async () => {
   assert.ok(r.errors.length >= 2);
 });
 
+test('규제 변경 감지: 빈 RSS는 확인 실패, 법제처 인증 거부는 한 번만 알린다', async () => {
+  const calls = mock([
+    [/news\.example/, '<rss><channel></channel></rss>'],
+    [/lawSearch\.do/, { result: '사용자 정보 검증에 실패하였습니다.', msg: '정확한 서버장비의 IP주소 및 도메인주소를 등록해 주세요.' }],
+  ]);
+  const r = await L.regulationCheck(cfg(), false, '2026-09-25');
+  assert.equal(r.ok, false);
+  assert.ok(!r.checked.includes('https://news.example/rss'));
+  const lawErrors = r.errors.filter((e) => e.startsWith('법제처'));
+  assert.equal(lawErrors.length, 1);
+  assert.match(lawErrors[0], /IP주소/);
+  assert.equal(calls.filter((u) => /lawSearch/.test(u)).length, 1);
+});
+
 test('조건 판정: 최신 데이터 우선, 미확인이면 경고', () => {
   const base = {
     purpose: '거주', regionId: 'incheon', propertyType: '아파트', areaM2: 84, price: 5e8, recentTrades: [], jeonse: null,

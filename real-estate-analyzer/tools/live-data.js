@@ -31,8 +31,7 @@ function loadConfig() {
     kakaoKey: pick('kakaoKey', 'KAKAO_REST_KEY', ''), // 카카오 로컬 REST API 키 (좌표·주변 역·학교) // 법제처 국가법령정보 공동활용 OC(가입 이메일 ID)
     newsFeeds: [].concat(pick('newsFeeds', 'NEWS_FEEDS', null) || []).flatMap((x) => String(x).split(',')).map((x) => x.trim()).filter(Boolean),
     _defaultFeeds: [
-      'https://www.molit.go.kr/USR/NEWS/m_71/rss.jsp',
-      'https://www.korea.kr/rss/policy.xml',
+      'https://www.molit.go.kr/USR/NEWS/m_71/rss.jsp', // 정책브리핑(korea.kr) RSS는 서비스 중단
     ],
     ttl: { landUse: HOUR, redev: 6 * HOUR, regulation: HOUR, ...(file.ttl || {}) },
   };
@@ -41,10 +40,17 @@ function loadConfig() {
 }
 
 // ── HTTP ────────────────────────────────────────────────────────────────
-function defaultFetch(url, headers) {
+// 3xx는 쿠키를 붙여 최대 3번 따라간다 (국토부 RSS는 쿠키 설정 후 같은 주소로 307).
+function defaultFetch(url, headers, hops = 0, cookie = '') {
   const lib = url.startsWith('https:') ? https : http;
   return new Promise((resolve, reject) => {
-    const req = lib.get(url, { timeout: 15000, headers: { 'user-agent': 'real-estate-analyzer/1.0', ...(headers || {}) } }, (res) => {
+    const h = { 'user-agent': 'real-estate-analyzer/1.0', ...(headers || {}), ...(cookie ? { cookie } : {}) };
+    const req = lib.get(url, { timeout: 15000, headers: h }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && hops < 3) {
+        res.resume();
+        const jar = [cookie, ...[].concat(res.headers['set-cookie'] || []).map((c) => c.split(';')[0])].filter(Boolean).join('; ');
+        return resolve(defaultFetch(new URL(res.headers.location, url).href, headers, hops + 1, jar));
+      }
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf8') }));
@@ -247,7 +253,11 @@ function parseRss(xml) {
 
 function parseLawSearch(json) {
   const root = json && (json.LawSearch || json.lawSearch);
-  if (!root) throw new Error('법제처 응답 형식 오류');
+  if (!root) {
+    const r = (json && (json.Response || json.response)) || json || {};
+    if (r.result || r.msg) throw new Error(`법제처 거부: ${[r.result, r.msg].filter(Boolean).join(' ')}`);
+    throw new Error('법제처 응답 형식 오류');
+  }
   return asArray(root.law).map((l) => ({
     name: l['법령명한글'] || l.lawNm || '',
     enforced: l['시행일자'] || '',
@@ -268,6 +278,7 @@ async function regulationCheck(cfg, fresh, asOf = P.asOf) {
     for (const feed of cfg.newsFeeds) {
       try {
         const items = parseRss(await getText(feed));
+        if (!items.length) throw new Error('RSS 항목이 없음 (주소 변경 또는 차단)');
         checked.push(feed);
         for (const it of items) {
           if (it.date && Date.parse(it.date) >= since && REG_KEYWORDS.test(it.title)) changes.push({ kind: '보도·고시', title: it.title, date: it.date.slice(0, 10), link: it.link });
@@ -283,7 +294,10 @@ async function regulationCheck(cfg, fresh, asOf = P.asOf) {
           const eff = hit && ymdToIso(hit.enforced);
           if (eff && eff > asOf && eff <= today) changes.push({ kind: '법령 시행', title: `${hit.name} 개정 시행`, date: eff, link: 'https://www.law.go.kr/법령/' + encodeURIComponent(hit.name) });
           else if (eff && eff > today) changes.push({ kind: '법령 시행 예정', title: `${hit.name} 개정 (시행 예정)`, date: eff, link: 'https://www.law.go.kr/법령/' + encodeURIComponent(hit.name), upcoming: true });
-        } catch (err) { errors.push(`법제처 ${name}: ${err.message}`); }
+        } catch (err) {
+          errors.push(`법제처 ${name}: ${err.message}`);
+          if (/거부/.test(err.message)) break; // 인증 실패는 모든 법령이 같으므로 한 번만
+        }
       }
     } else errors.push('법제처 OC(LAW_OC) 미설정 — 법령 시행일 확인 생략');
     const ok = errors.length === 0;
@@ -345,10 +359,10 @@ function sourcesStatus(cfg) {
   return [
     { id: 'rtms', name: '국토부 아파트 매매 실거래가', configured: !!cfg.dataGoKrKey, how: 'data.go.kr 인증키 (DATA_GO_KR_KEY, 화면 입력 가능)', last: s('rtms') },
     { id: 'landUse', name: '토지이용계획 (토지거래허가·정비구역, 브이월드)', configured: !!cfg.vworldKey, how: 'vworld.kr 인증키 (VWORLD_KEY)', last: s('landUse') },
-    { id: 'redevSeoul', name: '서울 정비사업 현황 (열린데이터광장 OA-2253)', configured: !!(cfg.seoulKey && cfg.seoulRedevService), how: 'SEOUL_OPEN_API_KEY + SEOUL_REDEV_SERVICE', last: s('redevSeoul') },
+    { id: 'redevSeoul', name: '서울 정비사업 현황 (열린데이터광장, OA-2253은 서비스 종료)', configured: !!(cfg.seoulKey && cfg.seoulRedevService), how: 'SEOUL_OPEN_API_KEY + SEOUL_REDEV_SERVICE', last: s('redevSeoul') },
     { id: 'redevGyeonggi', name: '경기 정비사업 추진현황 (경기데이터드림)', configured: !!(cfg.ggKey && cfg.ggRedevService), how: 'GG_OPEN_API_KEY + GG_REDEV_SERVICE', last: s('redevGyeonggi') },
     { id: 'nearby', name: '단지 좌표·주변 역·초등학교 (카카오 로컬)', configured: !!cfg.kakaoKey, how: 'developers.kakao.com REST API 키 (KAKAO_REST_KEY)', last: s('nearby') || s('geo') },
-    { id: 'regulation', name: '규제 고시·법령 변경 감지 (국토부·정책브리핑 RSS, 법제처)', configured: true, how: 'RSS는 키 없음, 법령은 LAW_OC', last: s('regulation') },
+    { id: 'regulation', name: '규제 고시·법령 변경 감지 (국토부 RSS, 법제처)', configured: true, how: 'RSS는 키 없음, 법령은 LAW_OC + 법제처 신청에 서버 IP 등록', last: s('regulation') },
   ];
 }
 
