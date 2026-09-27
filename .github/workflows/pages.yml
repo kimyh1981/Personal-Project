@@ -37,7 +37,30 @@ jobs:
         run: |
           mkdir -p _site
           cd real-estate-analyzer
-          cp -r index.html manifest.webmanifest sw.js css js icons ../_site/
+          cp -r index.html my.html manifest.webmanifest sw.js css js icons ../_site/
+      # 서울 시장 데이터(내 맞춤 추천용)는 주 1회만 새로 모은다: 이번 주 캐시가 있으면 재사용
+      - name: Week key
+        id: week
+        run: echo "week=$(TZ=Asia/Seoul date +%G-%V)" >> "$GITHUB_OUTPUT"
+      - name: Restore Seoul market
+        id: market
+        uses: actions/cache@v4
+        with:
+          path: real-estate-analyzer/.market
+          key: market-seoul-${{ steps.week.outputs.week }}
+          restore-keys: market-seoul-
+      - name: Seoul market snapshot
+        if: steps.market.outputs.cache-hit != 'true'
+        working-directory: real-estate-analyzer
+        timeout-minutes: 15
+        continue-on-error: true
+        env:
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        run: node tools/market.js .market
+      - name: Add market data to site
+        run: |
+          mkdir -p _site/data
+          cp real-estate-analyzer/.market/*.json _site/data/ 2>/dev/null || echo "시장 데이터 없음"
       - name: Regulation snapshot
         working-directory: real-estate-analyzer
         timeout-minutes: 4
