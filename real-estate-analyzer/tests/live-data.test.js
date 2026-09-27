@@ -157,6 +157,26 @@ test('규제 변경 감지: 정책브리핑 보도자료 목록에서 기준일 
   assert.equal(calls.length, 2); // 두 번째 쪽이 새 자료가 없으면 멈춘다
 });
 
+test('규제 변경 감지: 공공데이터포털 법제처 API(XML)로 법령 시행일을 본다', async () => {
+  const xml = (name, eff) => `<?xml version="1.0"?><LawSearch><resultCode>00</resultCode><resultMsg>success</resultMsg>
+    <law id="1"><법령명한글><![CDATA[${name} 시행령]]></법령명한글><시행일자>20261201</시행일자></law>
+    <law id="2"><법령명한글><![CDATA[${name}]]></법령명한글><시행일자>${eff}</시행일자><공포일자>20260901</공포일자></law></LawSearch>`;
+  const calls = mock([
+    [/korea\.kr/, '<ul></ul>'],
+    [/1170000\/law\/lawSearchList\.do.*%EC%A3%BC%ED%83%9D%EB%B2%95/, xml('주택법', '20991231')],
+    [/1170000\/law\/lawSearchList\.do/, (u) => xml(decodeURIComponent(u.match(/query=([^&]+)/)[1]), '20260701')],
+  ]);
+  const r = await L.regulationCheck(cfg({ dataGoKrKey: 'DK', lawOc: '', newsFeeds: [] }), false, '2026-09-25');
+  assert.ok(calls.some((u) => /serviceKey=DK/.test(u)));
+  assert.ok(!calls.some((u) => /law\.go\.kr\/DRF/.test(u)));
+  const law = r.changes.filter((c) => c.kind.startsWith('법령'));
+  assert.equal(law.length, 1);
+  assert.equal(law[0].title, '주택법 개정 (시행 예정)'); // 시행일이 오늘 뒤면 예정
+  assert.equal(law[0].upcoming, true);
+  assert.equal(law[0].date, '2099-12-31');
+  assert.throws(() => L.parseLawSearchXml('<OpenAPI_ServiceResponse><cmmMsgHeader><returnAuthMsg>SERVICE_KEY_IS_NOT_REGISTERED_ERROR</returnAuthMsg></cmmMsgHeader></OpenAPI_ServiceResponse>'), /SERVICE_KEY/);
+});
+
 test('조건 판정: 최신 데이터 우선, 미확인이면 경고', () => {
   const base = {
     purpose: '거주', regionId: 'incheon', propertyType: '아파트', areaM2: 84, price: 5e8, recentTrades: [], jeonse: null,
