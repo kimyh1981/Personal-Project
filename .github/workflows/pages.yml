@@ -40,6 +40,8 @@ jobs:
           cp -r index.html manifest.webmanifest sw.js css js icons ../_site/
       - name: Regulation snapshot
         working-directory: real-estate-analyzer
+        timeout-minutes: 4
+        continue-on-error: true
         run: node tools/snapshot.js ../_site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
