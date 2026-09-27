@@ -227,7 +227,32 @@ async function redevList(cfg, sido, fresh) {
     } catch (err) { track(source, false, err.message); throw err; }
   });
 }
+// 서울: OA-2253 종료 후 '정비사업 정보몽땅'(서울시 공식) 사업장 검색 결과 표를 읽는다. 키 없음.
+const CLEANUP_URL = 'https://cleanup.seoul.go.kr/cleanup/bsnssttus/lsubBsnsSttus.do';
+function parseCleanupList(html) {
+  const text = (x) => x.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim();
+  const rows = [...String(html).matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)].map((m) => [...m[1].matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map((c) => text(c[1])));
+  const head = rows.find((r) => r.includes('사업장명') && r.includes('진행단계'));
+  if (!head) throw new Error('정비사업 정보몽땅 응답 형식 오류');
+  return rows.filter((r) => r !== head && r.length === head.length && r[head.indexOf('사업장명')])
+    .map((r) => Object.fromEntries(head.map((h, i) => [h, r[i]])));
+}
+async function cleanupSearch(q, fresh, ttl) {
+  const needle = String(q || '').trim();
+  if (needle.length < 2) throw new Error('서울 정비사업은 단지·구역 이름을 2글자 이상 넣어 검색하세요');
+  return cached('cleanup:' + needle, ttl, fresh, async () => {
+    try {
+      const rows = parseCleanupList(await getText(`${CLEANUP_URL}?scupBsnsSttus.asscNm=${encodeURIComponent(needle)}`));
+      track('redevSeoul', true, `${rows.length}건`);
+      const items = rows.map((r) => normalizeRedevRow({ ...r, 대표지번: [r['자치구'], r['대표지번']].filter(Boolean).join(' ') }, '서울'));
+      return { items, total: items.length, fetchedAt: new Date().toISOString(), source: '서울시 정비사업 정보몽땅' };
+    } catch (err) { track('redevSeoul', false, err.message); throw err; }
+  });
+}
+
 async function redevSearch(cfg, sido, q, fresh) {
+  if (sido === '서울' && !(cfg.seoulKey && cfg.seoulRedevService)) return cleanupSearch(q, fresh, cfg.ttl.redev);
   const all = await redevList(cfg, sido, fresh);
   const needle = String(q || '').replace(/\s+/g, '');
   const items = all.items.filter((it) => !needle || [it.name, it.address, it.district].some((v) => v.replace(/\s+/g, '').includes(needle)));
@@ -359,7 +384,7 @@ function sourcesStatus(cfg) {
   return [
     { id: 'rtms', name: '국토부 아파트 매매 실거래가', configured: !!cfg.dataGoKrKey, how: 'data.go.kr 인증키 (DATA_GO_KR_KEY, 화면 입력 가능)', last: s('rtms') },
     { id: 'landUse', name: '토지이용계획 (토지거래허가·정비구역, 브이월드)', configured: !!cfg.vworldKey, how: 'vworld.kr 인증키 (VWORLD_KEY)', last: s('landUse') },
-    { id: 'redevSeoul', name: '서울 정비사업 현황 (열린데이터광장, OA-2253은 서비스 종료)', configured: !!(cfg.seoulKey && cfg.seoulRedevService), how: 'SEOUL_OPEN_API_KEY + SEOUL_REDEV_SERVICE', last: s('redevSeoul') },
+    { id: 'redevSeoul', name: '서울 정비사업 진행단계 (서울시 정비사업 정보몽땅)', configured: true, how: '키 없음 (열린데이터광장 서비스명을 넣으면 그쪽을 우선 사용)', last: s('redevSeoul') },
     { id: 'redevGyeonggi', name: '경기 정비사업 추진현황 (경기데이터드림)', configured: !!(cfg.ggKey && cfg.ggRedevService), how: 'GG_OPEN_API_KEY + GG_REDEV_SERVICE', last: s('redevGyeonggi') },
     { id: 'nearby', name: '단지 좌표·주변 역·초등학교 (카카오 로컬)', configured: !!cfg.kakaoKey, how: 'developers.kakao.com REST API 키 (KAKAO_REST_KEY)', last: s('nearby') || s('geo') },
     { id: 'regulation', name: '규제 고시·법령 변경 감지 (국토부 RSS, 법제처)', configured: true, how: 'RSS는 키 없음, 법령은 LAW_OC + 법제처 신청에 서버 IP 등록', last: s('regulation') },
@@ -369,5 +394,5 @@ function sourcesStatus(cfg) {
 module.exports = {
   loadConfig, setFetcher, clearCache, track, NotConfigured,
   landUse, redevSearch, regulationCheck, geocode, nearby, sourcesStatus,
-  parseVworldSearch, parseLandUse, classifyZones, parseSeoulRows, parseGgRows, normalizeRedevRow, parseRss, parseLawSearch,
+  parseVworldSearch, parseLandUse, classifyZones, parseSeoulRows, parseGgRows, normalizeRedevRow, parseRss, parseLawSearch, parseCleanupList,
 };
