@@ -62,6 +62,7 @@
     } else {
       const f = FIELDS.find(([k]) => 'p_' + k === el.id);
       if (f) profile[f[0]] = fromView(el.value, f[1]);
+      if (f && f[0] === 'cgtReserve') profile.cgtConfirmed = true; // 0원도 직접 확인한 값
     }
     save(KEY, profile);
     run(false);
@@ -204,7 +205,7 @@
         <tr><td>노후 목표 (${p.targetAge}세, ${years}년 뒤)</td><td class="n">월 ${manw(p.retireNeed)} (현재 가치)</td></tr>
       </tbody></table></div>
       <p class="muted">서울 단지·평형 ${res.considered.toLocaleString()}곳 중 면적·입지 기본 조건을 통과한 ${res.kept.toLocaleString()}곳을 평가 · ${enriched ? '상위 후보는 카카오 지도로 역·학교·상권 확인' : '카카오 REST 키가 없어 입지는 구 중심 추정 (매수 판단기 실거래가 탭에서 키 입력)'}${prevWeek ? ` · 지난 기록(${esc(prevWeek.week)}) 대비 변동 표시` : ''}</p>
-      ${p.cgtReserve ? '' : '<p class="demo-note"><span class="chip warning">확인</span> 매도 양도세 예상이 0원입니다. 취득가를 알면 \'내 기준\'에 넣어 주세요. 2주택 매도는 먼저 파는 집에 양도세가 나올 수 있습니다.</p>'}`;
+      ${p.cgtReserve || p.cgtConfirmed ? '' : '<p class="demo-note"><span class="chip warning">확인</span> 매도 양도세 예상이 0원입니다. 취득가를 알면 \'내 기준\'에 넣어 주세요. 2주택 매도는 먼저 파는 집에 양도세가 나올 수 있습니다.</p>'}`;
 
     $('tierNav').innerHTML = tiers.map((t) => `<a href="#${t.id}" class="pill">${esc(t.rank)} <b>${t.items.length}</b></a>`).join('');
     $('myTiers').innerHTML = tiers.map((t) => `
