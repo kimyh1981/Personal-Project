@@ -90,7 +90,7 @@
     const w = parts.reduce((s, x) => s + x[2], 0);
     let score = w ? Math.round(parts.reduce((s, x) => s + x[1] * x[2], 0) / w) : 50;
     // 좌표·역·상권을 확인하지 않은 추정치는 중간값 쪽으로 당긴다 (구 중심 통근만으로 순위가 쏠리지 않게)
-    if (!c.coords || !c.infra) score = Math.round(score * 0.6 + 20);
+    if (!c.coords || !c.infra) score = Math.round(score * 0.5 + 15);
     return { score, commute, parts, estimated: !c.coords || !c.infra };
   }
 

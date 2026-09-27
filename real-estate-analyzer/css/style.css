@@ -753,3 +753,11 @@ input[type=checkbox]:checked::before { transform: translateX(20px); }
 #myProfileCard[open] summary::after { content: '닫기'; }
 .my-form { margin-top: 12px; padding: 0; background: none; }
 a.btn { display: inline-flex; align-items: center; padding: 9px 14px; border-radius: 999px; text-decoration: none; }
+.my-page .reco-card .tbl-wrap { overflow: visible; }
+.my-page .reco-card table, .my-page .reco-card tbody { display: block; width: 100%; }
+.my-page .reco-card tr { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 12px; }
+.my-page .reco-card td { display: block; border: 0; padding: 0; }
+.my-page .reco-card tr { padding: 10px var(--pad); border-bottom: 1px solid var(--sep, rgba(0,0,0,.08)); }
+.my-page .reco-card td:first-child { flex: 1 1 9em; color: var(--label-2-solid); }
+.my-page .reco-card td.n { flex: 1 1 12em; text-align: right; white-space: normal; }
+.my-page .reco-title h3 .unit { white-space: nowrap; }
