@@ -123,17 +123,23 @@
   async function fetchLandUse(fresh) {
     const addr = $('parcelAddress').value.trim();
     const st = $('landUseStatus');
-    if (!liveState.available) { st.textContent = '로컬 서버(npm start)로 열어야 조회할 수 있습니다.'; return; }
     if (!addr) { st.textContent = '지번 주소를 입력하세요.'; return; }
+    // 서버가 없으면(웹 주소·앱 설치본) 브라우저가 브이월드를 직접 부른다
+    const direct = !liveState.available;
+    const vwKey = $('vworldKey').value.trim();
+    if (direct && !vwKey) { st.textContent = '브이월드 인증키를 넣으면 이 화면에서 바로 조회합니다.'; return; }
+    try { if (vwKey) localStorage.setItem('rea-vworld-key', vwKey); } catch (_) { /* 무시 */ }
     st.textContent = '조회 중…';
     try {
-      const r = await liveGet(`api/landuse?address=${encodeURIComponent(addr)}${fresh ? '&fresh=1' : ''}`);
+      const r = direct
+        ? await window.REA_VWORLD.lookup(addr, vwKey, location.hostname)
+        : await liveGet(`api/landuse?address=${encodeURIComponent(addr)}${fresh ? '&fresh=1' : ''}`);
       liveState.landUse[addr] = r;
       st.textContent = `${r.address} · ${r.zones.length ? r.zones.join(', ') : '지역지구 없음'} (${fmtTime(r.fetchedAt)} 조회)`;
     } catch (err) {
       st.textContent = `조회 실패: ${err.message}`;
     }
-    await refreshSources();
+    if (!direct) await refreshSources();
     update();
   }
   async function fetchRedev() {
@@ -914,6 +920,8 @@
   // ── 실거래가 자동 조회 ─────────────────────────────────────────────────
   let lawdTouched = false;
   async function initApi() {
+    try { $('vworldKey').value = localStorage.getItem('rea-vworld-key') || ''; } catch (_) { /* 무시 */ }
+    $('vworldKeyWrap').hidden = false; // 서버가 브이월드 키를 갖고 있으면 아래에서 숨긴다
     if (!/^https?:$/.test(location.protocol)) return;
     try {
       const r = await fetch('api/health');
@@ -928,6 +936,7 @@
       try { $('apiKey').value = localStorage.getItem('rea-api-key') || ''; } catch (_) { /* 무시 */ }
       if (h.live) {
         liveState.available = true;
+        $('vworldKeyWrap').hidden = true;
         await refreshRegulation(false);
         setInterval(() => refreshRegulation(false), 30 * 60e3); // 열어둔 동안 30분마다 다시 확인
         if ($('parcelAddress').value.trim()) fetchLandUse(false);

@@ -95,35 +95,8 @@ class NotConfigured extends Error {
 // ── 1. 필지 토지이용계획 (브이월드) ────────────────────────────────────
 const asArray = (x) => (x == null ? [] : Array.isArray(x) ? x : [x]);
 
-function parseVworldSearch(json) {
-  const r = json && json.response;
-  if (!r) throw new Error('브이월드 주소검색 응답 형식 오류');
-  if (r.status === 'NOT_FOUND') return [];
-  if (r.status !== 'OK') throw new Error(`브이월드 주소검색 오류: ${(r.error && r.error.text) || r.status}`);
-  return asArray(r.result && r.result.items).map((it) => ({
-    pnu: String(it.id || ''),
-    address: (it.address && (it.address.parcel || it.address.road)) || it.title || '',
-  })).filter((x) => /^\d{19}$/.test(x.pnu));
-}
-
-// 지역지구 이름으로 규제 판정
-function classifyZones(names) {
-  const has = (re) => names.some((n) => re.test(n));
-  return {
-    landPermit: has(/토지거래(계약에관한)?허가/),
-    speculativeOverheated: has(/투기과열/),
-    adjusted: has(/조정대상/),
-    redevZone: has(/정비구역|정비예정구역|재정비촉진|재건축|재개발/),
-  };
-}
-
-function parseLandUse(json) {
-  const root = json && (json.landUses || json.response || json);
-  const fields = asArray(root && (root.field || (root.result && root.result.field)));
-  if (!fields.length && json && json.error) throw new Error('브이월드 토지이용계획 오류: ' + JSON.stringify(json.error).slice(0, 120));
-  const zones = [...new Set(fields.map((f) => f.prposAreaDstrcCodeNm).filter(Boolean))];
-  return { zones, ...classifyZones(zones) };
-}
+const VW = require('../js/vworld.js');
+const { parseVworldSearch, classifyZones, parseLandUse } = VW;
 
 async function landUse(cfg, address, fresh) {
   if (!cfg.vworldKey) throw new NotConfigured('브이월드 인증키(VWORLD_KEY)');
@@ -131,11 +104,10 @@ async function landUse(cfg, address, fresh) {
   if (q.length < 4) throw new Error('지번 주소를 입력하세요 (예: 서울 마포구 아현동 777)');
   return cached('landuse:' + q, cfg.ttl.landUse, fresh, async () => {
     try {
-      const key = encodeURIComponent(cfg.vworldKey);
-      const s = await getJson(`https://api.vworld.kr/req/search?service=search&request=search&version=2.0&size=5&type=address&category=parcel&format=json&query=${encodeURIComponent(q)}&key=${key}`);
+      const s = await getJson(VW.searchUrl(q, cfg.vworldKey));
       const hits = parseVworldSearch(s);
       if (!hits.length) throw new Error('주소를 찾지 못했습니다. 지번 주소로 입력하세요');
-      const u = await getJson(`https://api.vworld.kr/ned/data/getLandUseAttr?pnu=${hits[0].pnu}&format=json&numOfRows=100&pageNo=1&key=${key}&domain=${encodeURIComponent(cfg.vworldDomain)}`);
+      const u = await getJson(VW.landUseUrl(hits[0].pnu, cfg.vworldKey, cfg.vworldDomain));
       const out = { ...parseLandUse(u), pnu: hits[0].pnu, address: hits[0].address, fetchedAt: new Date().toISOString(), source: '국토교통부 토지이용계획 (브이월드)' };
       track('landUse', true);
       return out;
