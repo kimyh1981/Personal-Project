@@ -79,6 +79,20 @@ test('서울 정비사업: 페이지 조회, 검색, 단계 이력', async () =>
   assert.equal(r2.items[0].currentStage, '사업시행인가');
 });
 
+test('서울 정비사업: 서비스명이 없으면 정비사업 정보몽땅 사업장 검색을 읽는다', async () => {
+  const html = `<table><thead><tr><th>번호</th><th>자치구</th><th>사업구분</th><th>사업장명</th><th>대표지번</th><th>진행단계</th><th>이동</th></tr></thead>
+    <tbody><tr><td>1</td><td>강남구</td><td>재건축</td><td><a href="#">은마아파트 재건축정비사업조합</a></td><td>대치동 316</td><td>사업시행인가</td><td><a>사업장</a> <a>지도</a></td></tr></tbody></table>`;
+  const calls = mock([[/cleanup\.seoul\.go\.kr/, html]]);
+  const r = await L.redevSearch(cfg({ seoulRedevService: '' }), '서울', '은마');
+  assert.match(calls[0], /asscNm=%EC%9D%80%EB%A7%88/);
+  assert.equal(r.source, '서울시 정비사업 정보몽땅');
+  assert.equal(r.items.length, 1);
+  assert.equal(r.items[0].name, '은마아파트 재건축정비사업조합');
+  assert.equal(r.items[0].address, '강남구 대치동 316');
+  assert.equal(r.items[0].currentStage, '사업시행인가');
+  await assert.rejects(L.redevSearch(cfg({ seoulRedevService: '' }), '서울', '은'), /2글자/);
+});
+
 test('경기 정비사업: 경기데이터드림 응답 형식', async () => {
   mock([[/openapi\.gg\.go\.kr/, { ggSvc: [{ head: [{ list_total_count: 1 }, { RESULT: { CODE: 'INFO-000', MESSAGE: 'OK' } }] }, { row: [{ SIGUN_NM: '성남시', 정비구역명: '수진1구역', 사업단계: '관리처분인가' }] }] }]]);
   const r = await L.redevSearch(cfg(), '경기', '수진');
