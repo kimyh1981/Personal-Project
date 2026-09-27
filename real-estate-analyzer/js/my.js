@@ -154,13 +154,14 @@
       let res = T.classify(evals, profile);
       let enriched = false;
       if (withEnrich) {
-        // 순위별 상위 후보만 입지를 확인한 뒤 다시 매긴다
-        const short = [...new Set(T.topN(res, 10).flatMap((t) => t.items.map((x) => x.e.c)))];
-        const cache = load(GEOC, {});
-        enriched = await enrich(short, (t) => status(`<p class="muted">${esc(t)}</p>`));
-        if (!enriched) for (const c of short) { const g = cache[c.id]; if (g && g.coords) { c.coords = g.coords; } }
-        evals = all.map((c) => T.evaluate(c, profile, market.regions[c.regionId], f));
-        res = T.classify(evals, profile);
+        // 순위별 상위 후보만 입지를 확인한 뒤 다시 매긴다. 순위가 바뀌어 새로 올라온 후보가 있어 두 번 돈다
+        for (let round = 0; round < 2; round++) {
+          const short = [...new Set(T.topN(res, 8).flatMap((t) => t.items.map((x) => x.e.c)))];
+          enriched = await enrich(short, (t) => status(`<p class="muted">${round ? '새로 올라온 후보 ' : ''}${esc(t)}</p>`));
+          evals = all.map((c) => T.evaluate(c, profile, market.regions[c.regionId], f));
+          res = T.classify(evals, profile);
+          if (!enriched) break;
+        }
       }
       const tiers = T.topN(res, 5);
       render(f, res, tiers, enriched);
