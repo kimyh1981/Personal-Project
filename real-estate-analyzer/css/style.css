@@ -200,7 +200,7 @@ input[type=checkbox]:focus-visible { outline: 2px solid var(--tint); outline-off
 .subgrid .f { padding-left: calc(var(--pad) + 12px); }
 .subgrid .f::after { left: calc(var(--pad) + 12px); }
 .live-row { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; padding: 0 var(--pad) 8px 0; }
-.live-row > .f { flex: 1 1 60%; }
+.live-row > .f { flex: 1 0 100%; }
 .live-row > .f::after { display: none; }
 .live-row > button { margin-left: auto; }
 .live-row > select { flex: 1 0 100%; margin: 4px 0 0 var(--pad); font: 15px var(--font); padding: 10px 12px; border-radius: 10px; border: 0; background: var(--group-2); color: var(--label); }
