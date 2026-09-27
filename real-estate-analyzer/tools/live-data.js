@@ -57,8 +57,11 @@ function defaultFetch(url, headers, opts = {}) {
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf8') }));
     });
-    req.on('error', reject);
+    req.on('error', (err) => { clearTimeout(hard); reject(err); });
     req.on('timeout', () => req.destroy(new Error('응답 시간 초과')));
+    req.on('close', () => clearTimeout(hard));
+    // 소켓 유휴 시간과 별개로 전체 요청 시간을 20초로 제한 (조금씩 흘려보내는 응답 대비)
+    const hard = setTimeout(() => req.destroy(new Error('응답 시간 초과')), 20000);
     req.end(body != null ? body : undefined);
   });
 }
