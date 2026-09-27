@@ -304,6 +304,7 @@
               <select id="apiMonths"><option value="12">최근 12개월</option><option value="24" selected>최근 24개월</option><option value="36">최근 36개월</option></select>
             </label>
             <label class="f" id="apiKeyWrap">인증키 <span class="unit">일반 인증키(Decoding)</span><input id="apiKey" type="password" autocomplete="off"></label>
+            <label class="f" id="kakaoKeyWrap" hidden>카카오 REST 키 <span class="unit">단지 위치·역·학교</span><input id="kakaoKey" type="password" autocomplete="off"></label>
             <button type="button" id="apiFetch" class="primary">실거래가 불러오기</button>
           </div>
         </div>
@@ -352,6 +353,7 @@
 <script src="js/engine.js"></script>
 <script src="js/conditions.js"></script>
 <script src="js/vworld.js"></script>
+<script src="js/direct.js"></script>
 <script src="js/geo.js"></script>
 <script src="js/recommend.js"></script>
 <script src="js/charts.js"></script>

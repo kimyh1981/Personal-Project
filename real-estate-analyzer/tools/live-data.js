@@ -207,15 +207,7 @@ async function redevList(cfg, sido, fresh) {
 }
 // 서울: OA-2253 종료 후 '정비사업 정보몽땅'(서울시 공식) 사업장 검색 결과 표를 읽는다. 키 없음.
 const CLEANUP_URL = 'https://cleanup.seoul.go.kr/cleanup/bsnssttus/lsubBsnsSttus.do';
-function parseCleanupList(html) {
-  const text = (x) => x.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim();
-  const rows = [...String(html).matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)].map((m) => [...m[1].matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map((c) => text(c[1])));
-  const head = rows.find((r) => r.includes('사업장명') && r.includes('진행단계'));
-  if (!head) throw new Error('정비사업 정보몽땅 응답 형식 오류');
-  return rows.filter((r) => r !== head && r.length === head.length && r[head.indexOf('사업장명')])
-    .map((r) => Object.fromEntries(head.map((h, i) => [h, r[i]])));
-}
+const { parseCleanupList } = require('../js/direct.js');
 async function cleanupSearch(q, fresh, ttl) {
   const needle = String(q || '').trim();
   if (needle.length < 2) throw new Error('서울 정비사업은 단지·구역 이름을 2글자 이상 넣어 검색하세요');
@@ -227,6 +219,19 @@ async function cleanupSearch(q, fresh, ttl) {
       return { items, total: items.length, fetchedAt: new Date().toISOString(), source: '서울시 정비사업 정보몽땅' };
     } catch (err) { track('redevSeoul', false, err.message); throw err; }
   });
+}
+
+// 서울 전체 사업장 (웹 버전 스냅샷용). 목록 화면은 pageSize로 한 번에 받을 수 있다.
+async function cleanupAll() {
+  const rows = await withRetry(async () => {
+    let r;
+    try { r = await fetcher(`${CLEANUP_URL}?cpage=1&pageSize=5000`); } catch (err) { err.retry = true; throw err; }
+    if (r.status >= 400) throw new Error(`HTTP ${r.status}`);
+    if (!r.body) throw Object.assign(new Error('빈 응답'), { retry: true });
+    return parseCleanupList(r.body);
+  });
+  if (rows.length < 100) throw new Error(`정비사업 정보몽땅 목록이 너무 적음 (${rows.length}건)`);
+  return rows;
 }
 
 async function redevSearch(cfg, sido, q, fresh) {
@@ -447,5 +452,5 @@ function sourcesStatus(cfg) {
 module.exports = {
   loadConfig, setFetcher, clearCache, track, NotConfigured,
   landUse, redevSearch, regulationCheck, geocode, nearby, sourcesStatus,
-  parseVworldSearch, parseLandUse, classifyZones, parseSeoulRows, parseGgRows, normalizeRedevRow, parseRss, parseLawSearch, parseCleanupList, parsePressList, pressReleases, parseLawSearchXml,
+  parseVworldSearch, parseLandUse, classifyZones, parseSeoulRows, parseGgRows, normalizeRedevRow, parseRss, parseLawSearch, parseCleanupList, cleanupAll, parsePressList, pressReleases, parseLawSearchXml,
 };
