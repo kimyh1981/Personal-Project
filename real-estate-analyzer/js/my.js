@@ -81,8 +81,14 @@
     const r = await fetch('data/market-seoul.json', { cache: 'no-store' });
     if (!r.ok) throw new Error('서울 시장 데이터가 아직 없습니다 (매주 자동 수집)');
     market = await r.json();
+    // 서울 정비사업 단계 (정비사업 정보몽땅, 6시간마다 수집). 없으면 단계 없이 계산
+    try {
+      const q = await fetch('data/redev-seoul.json', { cache: 'no-store' });
+      if (q.ok) redevSnap = await q.json();
+    } catch (_) { /* 무시 */ }
     return market;
   }
+  let redevSnap = null;
   function candidates() {
     const cols = market.cols;
     return market.cands.map((row) => {
@@ -154,6 +160,11 @@
       const f = T.funds(profile);
       const all = candidates();
       const dongs = T.dongIndex(all);
+      // 30년 넘은 단지: 정비사업 단계와 주변 사례로 재건축 가능성·입주까지 기간을 붙인다
+      if (redevSnap) {
+        const ri = T.redevIndex(redevSnap), og = T.oldRegisteredByGu(all, ri), yr = new Date().getFullYear();
+        for (const c of all) if (c.builtYear && yr - c.builtYear >= 30) c.redev = T.redevChance(c, ri, og);
+      }
       let evals = all.map((c) => T.evaluate(c, profile, market.regions[c.regionId], f, dongs.get(c.regionId + '|' + c.dong)));
       let res = T.classify(evals, profile);
       let enriched = false;
@@ -243,6 +254,50 @@
     </ul></div>`;
   }
 
+  // 정비사업 단계·주변 사례·공식 출처 링크와 단지별 가정 고치기
+  function redevBlock(c, e, used) {
+    const r = c.redev, pr = r.project, ov = (profile.reconOverrides || {})[c.id] || {};
+    const A = T.reconAssume(c, profile);
+    const cafe = pr && pr.cafe ? `https://cleanup.seoul.go.kr/cafe/mainIndx.do?cafeUrl=${encodeURIComponent(pr.cafe)}` : '';
+    const map = pr && pr.rec ? `https://urban.seoul.go.kr/view/map/mapPopup.html?recordCode=${encodeURIComponent(pr.rec)}` : '';
+    const search = 'https://cleanup.seoul.go.kr/cleanup/bsnssttus/lscrMainIndx.do';
+    const fact = pr
+      ? `<b>정비사업 정보몽땅:</b> ${esc(pr.name)} · <b>${esc(pr.stageText || '단계 미상')}</b>${r.done ? ' (사업 완료)' : ''}`
+      : '<b>정비사업 정보몽땅:</b> 이 단지로 등록된 재건축 사업이 없습니다 (사업 시작 전이거나 이름·지번이 달라 못 찾았을 수 있음)';
+    const basis = r.done ? '' : pr
+      ? `주변 사례: ${esc(r.scope)} 재건축 ${r.reached}곳이 이 단계까지 왔고 그중 ${r.doneN}곳이 준공·해산까지 끝남 → 서울 전체 비율로 보정해 성사 가능성 약 ${Math.round(r.chance * 100)}% · 이 단계부터 입주까지 보통 ${r.years}년`
+      : `주변 사례: ${esc(r.scope)} 30년 넘은 단지 중 정비사업에 등록된 비율 ${Math.round((r.startRate || 0) * 100)}% × 추진위 단계 이후 완료 비율 → 성사 가능성 약 ${Math.round(r.chance * 100)}% · 입주까지 보통 ${r.years}년`;
+    return `<div class="redev-box">
+      <p>${fact}</p>
+      ${basis ? `<p class="muted">${basis}</p>` : ''}
+      ${used ? '' : '<p class="muted">이 순위는 바로 입주 기준이라 재건축 가치를 넣지 않습니다. 고친 값은 2순위·5순위·추가 A 계산에 반영됩니다.</p>'}
+      <p class="links">사실 확인: ${cafe ? `<a href="${cafe}" target="_blank" rel="noopener">조합 공개 페이지(공지·총회·분담금 자료)</a> · ` : ''}${map ? `<a href="${map}" target="_blank" rel="noopener">서울 도시계획 지도(정비구역)</a> · ` : ''}<a href="${search}" target="_blank" rel="noopener">정비사업 정보몽땅에서 검색</a></p>
+      <details class="redev-edit"${ov.chance != null || ov.years != null || ov.shareM2 != null ? ' open' : ''}>
+        <summary>이 단지 가정 고치기 <span class="muted">(지금: ${esc(A.source)} · 가능성 ${Math.round(A.chance * 100)}% · 입주까지 ${A.years}년 · 분담금 ㎡당 ${Math.round(A.shareM2 / MAN)}만원)</span></summary>
+        <div class="redev-form" data-cid="${esc(c.id)}">
+          <label>성사 가능성 %<input type="number" step="5" data-ov="chance" value="${ov.chance != null ? Math.round(ov.chance * 100) : ''}" placeholder="${Math.round(A.chance * 100)}"></label>
+          <label>입주까지 년<input type="number" step="1" data-ov="years" value="${ov.years ?? ''}" placeholder="${A.years}"></label>
+          <label>분담금 만원/㎡<input type="number" step="50" data-ov="shareM2" value="${ov.shareM2 != null ? Math.round(ov.shareM2 / MAN) : ''}" placeholder="${Math.round(A.shareM2 / MAN)}"></label>
+          <button type="button" class="ghost" data-ov-reset>되돌리기</button>
+        </div>
+        <p class="muted">조합 공개 페이지의 총회 자료·관리처분계획에서 분담금과 일정을 확인해 넣으면 이 단지 계산에 바로 반영됩니다. 비우면 추정값을 씁니다.</p>
+      </details>
+    </div>`;
+  }
+  $('myTiers').addEventListener('change', (e) => {
+    const el = e.target.closest('[data-ov]'); if (!el) return;
+    const cid = el.closest('[data-cid]').dataset.cid, k = el.dataset.ov, v = el.value.trim();
+    const all = { ...(profile.reconOverrides || {}) }, o = { ...(all[cid] || {}) };
+    if (v === '') delete o[k]; else o[k] = k === 'chance' ? Math.max(0, Math.min(100, Number(v))) / 100 : k === 'shareM2' ? Number(v) * MAN : Number(v);
+    if (Object.keys(o).length) all[cid] = o; else delete all[cid];
+    profile.reconOverrides = all; save(KEY, profile); run(false);
+  });
+  $('myTiers').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-ov-reset]'); if (!b) return;
+    const cid = b.closest('[data-cid]').dataset.cid, all = { ...(profile.reconOverrides || {}) };
+    delete all[cid]; profile.reconOverrides = all; save(KEY, profile); run(false);
+  });
+
   function card(t, x, k, prevWeek) {
     const e = x.e, c = e.c, p = profile, reg = E.region(c.regionId);
     const age = c.builtYear ? new Date().getFullYear() - c.builtYear : null;
@@ -267,13 +322,14 @@
         ${e.debt60 > 0 ? `<tr><td>${p.targetAge}세에 남는 대출 (집 팔아 상환)</td><td class="n">${won(e.debt60)}</td></tr>` : ''}` : `<tr><td>대출 없이 남는 돈</td><td class="n">${won(e.leftover)}</td></tr>`}
         ${e.saveMonthly > 0 ? `<tr><td>상환 여유분 저축 (월 ${manw(e.saveMonthly)}, 연 ${pct(p.cashReturn, 1)})</td><td class="n">${p.targetAge}세 ${won(e.save60)}</td></tr>` : ''}
         <tr><td>예상 연 상승률 (${esc(e.growth.basis)}${useRecon && e.recon && !e.rebuild ? ' + 재건축 0.7%p' : ''})</td><td class="n">${pct(useRecon ? e.gRecon : e.growth.g)}</td></tr>
-        ${useRecon && e.rebuild ? `<tr><td>재건축 뒤 (같은 동 신축 ${e.rebuild.peers}곳 ㎡당가 기준)</td><td class="n">지금 신축이면 ${won(e.rebuild.nowNew)} (현재가 대비 ${e.rebuild.premium >= 0 ? '+' : ''}${Math.round(e.rebuild.premium * 100)}%) · 분담금 −${won(e.rebuild.share)} · 성사 가능성 ${Math.round((p.reconChance ?? 0.6) * 100)}% 반영</td></tr>
+        ${useRecon && e.rebuild ? `<tr><td>재건축 뒤 (같은 동 신축 ${e.rebuild.peers}곳 ㎡당가 기준)</td><td class="n">지금 신축이면 ${won(e.rebuild.nowNew)} (현재가 대비 ${e.rebuild.premium >= 0 ? '+' : ''}${Math.round(e.rebuild.premium * 100)}%) · 분담금 −${won(e.rebuild.share)} · 성사 가능성 ${Math.round(e.rebuild.chance * 100)}% 반영</td></tr>
         <tr><td>${p.targetAge}세 재건축 뒤 예상 범위 (±15%)</td><td class="n">${won(e.rebuild.low)} ~ ${won(e.rebuild.high)}</td></tr>` : ''}
         <tr><td>${p.targetAge}세 예상 시세${e.debt60 > 0 ? ' → 대출 갚고 남는 돈' : ''}</td><td class="n">${won(v60)}${e.debt60 > 0 ? ` → ${won(v60 - e.debt60)}` : ''}</td></tr>
         <tr><td>노후 월소득 (현재 가치, ${esc(ret.method)}${t.id === 'xb' ? ' + 남는 돈 운용' : ''}${t.id === 't4' ? ', 저축 제외' : ret.extraReal > 0 ? ' + 저축' : ''})</td><td class="n"><b>${manw(ret.monthly)}</b> · 목표의 ${Math.round(ratio * 100)}%</td></tr>
         <tr><td>입지 점수 ${e.loc.estimated ? '(추정)' : ''}</td><td class="n">${e.loc.score}점${e.loc.commute != null ? ` · 업무지구 약 ${e.loc.commute}분` : ''}${c.subwayMin != null ? ` · ${esc(c.stationName || '역')} 도보 ${c.subwayMin}분` : ''}</td></tr>
         ${c.infra ? `<tr><td>상권·생활</td><td class="n">대형마트 ${c.infra.mart}곳(1.5km) · 병원 ${c.infra.hospital}곳(1km)${c.infra.school != null ? ` · 초등학교 도보 ${c.infra.school}분` : ''}</td></tr>` : ''}
       </tbody></table></div>
+      ${c.redev ? redevBlock(c, e, useRecon) : ''}
       ${cautions.length ? `<ul class="cons">${cautions.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}
       <div class="row"><a class="ghost btn" href="${map}" target="_blank" rel="noopener">지도에서 보기</a></div>
     </div>`;
@@ -286,7 +342,8 @@
     '상환 여유분 저축: 월 상환 기본 한도에서 실제 상환액을 뺀 나머지를 매달 연 3%로 모은다고 봅니다 (대출 없는 3·4순위는 기본 한도 전액). 내 기준에서 끌 수 있습니다.',
     '은행 한도를 넘는 돈은 추가 자금(가족 차입·개인 근저당 등)으로 보고 같은 기간 상환으로 계산합니다.',
     '미래 시세는 단지(40%)·같은 동(40%)·구(20%)의 과거 5년·10년 ㎡당 연평균 상승률을 섞은 뒤 보수적으로 1.5%p 낮추고, 연 5.5%를 넘지 않게 합니다. 서울 실거래 검증에서 같은 동 상승률을 쓰면 5년 뒤 시세 오차가 5%로, 구 상승률(10%)보다 잘 맞았습니다.',
-    '30년 넘은 단지(2순위·5순위·추가 A): 재건축 뒤 시세 = 같은 동 준공 15년 이내 신축의 ㎡당가 × 면적(현재가의 2배 상한) − 분담금(입주까지 물가만큼 증가). 오르는 몫은 성사 가능성(기본 60%)만큼만 인정합니다. 주상복합·소규모 단지·60세 이후 입주는 넣지 않습니다. 검증에서 신축은 같은 동 준신축 시세에 오차 중앙값 12%, 편향 거의 0으로 맞춰졌지만, 구축이 재건축되기까지의 기간·분담금·성사 여부는 공공데이터로 검증할 수 없는 가정입니다.',
+    '재건축 가능성: 30년 넘은 단지를 서울 정비사업 정보몽땅 사업장과 같은 동·대표 지번·이름으로 짝지어 실제 단계를 붙입니다. 성사 가능성은 같은 구 재건축 사업 중 그 단계까지 온 곳이 준공·해산까지 끝난 비율(사례가 적으면 서울 비율로 보정), 입주까지 기간은 단계별 평균입니다. 사업이 없으면 같은 구 30년 넘은 단지의 사업 등록 비율을 곱합니다. 카드의 조합 공개 페이지·도시계획 지도 링크로 사실을 확인하고, 단지별로 가능성·기간·분담금을 고칠 수 있습니다.',
+    '30년 넘은 단지(2순위·5순위·추가 A): 재건축 뒤 시세 = 같은 동 준공 15년 이내 신축의 ㎡당가 × 면적(현재가의 2배 상한) − 분담금(입주까지 물가만큼 증가). 오르는 몫은 성사 가능성(단지별 추정, 없으면 기본 60%)만큼만 인정합니다. 주상복합·소규모 단지·60세 이후 입주는 넣지 않습니다. 검증에서 신축은 같은 동 준신축 시세에 오차 중앙값 12%, 편향 거의 0으로 맞춰졌지만, 구축이 재건축되기까지의 기간·분담금·성사 여부는 공공데이터로 검증할 수 없는 가정입니다.',
     '노후 월소득은 60세 시세를 현재 가치로 바꾼 뒤, 집을 줄여 옮기고 차액을 연 4%로 쓰는 경우와 주택연금 중 큰 값입니다. 국민연금·퇴직연금은 넣지 않았습니다.',
     '입지(교통·상권·인프라) 45점 미만은 모든 순위에서 뺍니다. 한 단지는 가장 높은 순위에 한 번만 나옵니다.',
     '서울 시장 데이터는 매주 월요일 국토부 실거래가(최근 6개월 매매·전월세, 5·10년 전 매매)로 새로 모읍니다. 이 페이지를 열 때마다 최신 데이터로 다시 계산합니다.',

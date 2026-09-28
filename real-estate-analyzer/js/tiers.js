@@ -12,10 +12,10 @@
  */
 (function (root, factory) {
   const node = typeof module !== 'undefined' && module.exports;
-  const mod = node ? factory(require('./policy.js'), require('./engine.js'), require('./geo.js')) : factory(root.REA_POLICY, root.REA, root.REA_GEO);
+  const mod = node ? factory(require('./policy.js'), require('./engine.js'), require('./geo.js'), require('./conditions.js')) : factory(root.REA_POLICY, root.REA, root.REA_GEO, root.REA_COND);
   if (node) module.exports = mod;
   else root.REA_TIERS = mod;
-})(typeof self !== 'undefined' ? self : this, function (P, E, GEO) {
+})(typeof self !== 'undefined' ? self : this, function (P, E, GEO, COND) {
   const MAN = 1e4, EOK = 1e8;
 
   // 개인 값은 비워 둔다 (공개 코드). 개인 설정 링크나 화면 입력으로 채운다.
@@ -108,17 +108,119 @@
     return { g, basis, complexG, dongG, regionG };
   }
 
+  // ── 정비사업 단계 (서울 정비사업 정보몽땅) ────────────────────────────
+  const STAGES = P.RECON.stages; // 12단계
+  const STAGE_FIX = { 사업시행자지정: '조합설립인가', '정비계획 수립': '기본계획수립', 분양: '일반분양승인', 조합창립총회: '추진위원회승인', 조합규약작성: '추진위원회승인', 사업계획승인: '사업시행인가', 도시계획심의: '정비구역지정' };
+  function normStage(text) {
+    const t = String(text || '').trim();
+    if (!t) return null;
+    if (STAGE_FIX[t]) return STAGE_FIX[t];
+    if (/사업계획승인/.test(t)) return '사업시행인가';
+    if (/지구단위|건축심의|교통심의/.test(t)) return '정비구역지정';
+    return COND ? COND.stageFromText(t) : null;
+  }
+  const APT_KINDS = /재건축|리모델링/; // 아파트 후보에 맞는 사업 (재개발·가로주택·지역주택 제외)
+  const core = (name) => String(name || '').replace(/\s+/g, '').replace(/(재건축|정비사업|주택|조합|추진위원회|아파트|리모델링|소규모)/g, '');
+
+  /**
+   * 정비사업 목록(data/redev-seoul.json)으로 사업장 색인과 '주변 사례' 진행 비율을 만든다.
+   * 진행 비율: 같은 구(사례가 적으면 서울 전체)에서 그 단계 이상까지 온 재건축 사업 중 준공·해산까지 끝난 비율.
+   * 한 시점의 단면이라 오래된 사업일수록 끝났을 가능성이 커지는 편향이 있다 (참고용 추정).
+   */
+  function redevIndex(snap) {
+    const cols = snap.cols, at = (r, k) => r[cols.indexOf(k)] || '';
+    const projects = snap.rows.map((r) => {
+      const stage = normStage(at(r, '진행단계'));
+      const [dong, ...rest] = at(r, '대표지번').split(' ');
+      return { gu: at(r, '자치구'), kind: at(r, '사업구분'), name: at(r, '사업장명'), dong, jibun: rest.join(' '), stageText: at(r, '진행단계'), stage, idx: stage ? STAGES.indexOf(stage) : -1, cafe: at(r, 'cafe'), rec: at(r, 'rec') };
+    }).filter((x) => APT_KINDS.test(x.kind));
+    const done = STAGES.indexOf('준공');
+    const stats = (list) => STAGES.map((st, i) => {
+      const reached = list.filter((x) => x.idx >= i).length, fin = list.filter((x) => x.idx >= done).length;
+      return { reached, done: fin, rate: reached ? fin / reached : null };
+    });
+    const byGu = new Map();
+    for (const x of projects) { if (!byGu.has(x.gu)) byGu.set(x.gu, []); byGu.get(x.gu).push(x); }
+    const seoulStats = stats(projects);
+    // 구별 사례가 적으면 서울 전체 비율 쪽으로 당긴다 (사례 10곳 분량의 서울 비율을 더해 평균)
+    const K = 10;
+    const guStats = new Map([...byGu].map(([g, l]) => [g, stats(l).map((x, i) => {
+      const base = seoulStats[i].rate ?? 0.3;
+      return { ...x, rate: (x.done + K * base) / (x.reached + K), raw: x.rate };
+    })]));
+    return { projects, byGu, guStats, seoulStats, fetchedAt: snap.fetchedAt };
+  }
+
+  // 후보 단지와 정비사업 사업장 짝짓기: 같은 구·같은 동 + 이름 일치
+  function matchProject(c, ri) {
+    const gu = E.region(c.regionId).name.replace(/^서울 /, '');
+    const list = ri.byGu.get(gu) || [];
+    const cc = core(c.name);
+    const lot = (j) => String(j || '').split('-')[0].replace(/\D/g, '');
+    const cl = lot(c.jibun);
+    // 1) 같은 동·같은 대표 지번(본번) 2) 같은 동·이름 일치
+    return (cl && list.find((x) => x.dong === c.dong && lot(x.jibun) === cl))
+      || (cc.length >= 2 && list.find((x) => x.dong === c.dong && (core(x.name).includes(cc) || (core(x.name).length >= 2 && cc.includes(core(x.name))))))
+      || null;
+  }
+
+  /**
+   * 재건축 가능성 추정 (30년 넘은 단지): 등록된 사업이면 그 단계의 주변 사례 완료 비율과 단계별 입주까지 기간,
+   * 등록 전이면 '같은 구 30년 넘은 단지 중 사업 등록 비율 × 추진위 단계 완료 비율'.
+   */
+  function redevChance(c, ri, oldInGu) {
+    const gu = E.region(c.regionId).name.replace(/^서울 /, '');
+    const st = ri.guStats.get(gu) || ri.seoulStats;
+    const scope = st === ri.seoulStats ? '서울' : `${gu}(서울 비율로 보정)`;
+    const pr = matchProject(c, ri);
+    if (pr && pr.idx >= STAGES.indexOf('준공')) return { project: pr, done: true };
+    if (pr && pr.idx > 0) {
+      const s = st[pr.idx];
+      return { project: pr, stage: pr.stage, chance: clamp(s.rate ?? 0.3, 0.03, 0.95), years: P.RECON.yearsToMoveIn[pr.stage] ?? 10, scope, reached: s.reached, doneN: s.done };
+    }
+    const reg = oldInGu && oldInGu.get(gu);
+    const startRate = reg && reg.total ? reg.registered / reg.total : 0.3;
+    const s = st[STAGES.indexOf('추진위원회승인')];
+    return { project: pr, stage: null, chance: clamp(startRate * (s.rate ?? 0.3), 0.03, 0.95), years: P.RECON.yearsToMoveIn['기본계획수립'], scope, startRate, reached: s.reached, doneN: s.done };
+  }
+  // 구별 '30년 넘은 단지 중 정비사업 등록 비율'
+  function oldRegisteredByGu(cands, ri, thisYear = new Date().getFullYear()) {
+    const out = new Map(), seen = new Set();
+    for (const c of cands) {
+      if (!c.builtYear || thisYear - c.builtYear < 30) continue;
+      const k = c.regionId + '|' + c.dong + '|' + c.name;
+      if (seen.has(k)) continue; seen.add(k);
+      const gu = E.region(c.regionId).name.replace(/^서울 /, '');
+      if (!out.has(gu)) out.set(gu, { total: 0, registered: 0 });
+      const o = out.get(gu); o.total++; if (matchProject(c, ri)) o.registered++;
+    }
+    return out;
+  }
+
   // 재건축 뒤 시세: 같은 동 신축(15년 이내) ㎡당가 × 면적, 분담금은 입주까지 물가만큼 오른다
   const NOT_REBUILDABLE = /타워|주상복합|오피스텔|빌딩|파크텔|스카이|트윈/;
+  // 단지별 가정: 직접 고친 값 > 정비사업 단계·주변 사례 추정 > 내 기준 기본값
+  function reconAssume(c, p) {
+    const ov = (p.reconOverrides || {})[c.id] || {};
+    const rx = c.redev || {};
+    return {
+      chance: ov.chance ?? rx.chance ?? p.reconChance ?? 0.6,
+      years: ov.years ?? rx.years ?? p.reconYears ?? 10,
+      shareM2: ov.shareM2 ?? p.reconShareM2 ?? 0,
+      source: ov.chance != null || ov.years != null || ov.shareM2 != null ? '직접 입력' : rx.chance != null ? '정비사업 단계·주변 사례' : '내 기준 기본값',
+    };
+  }
   function rebuild(c, p, dong, g, years) {
     if (!dong || !dong.newM2) return null;
     if (NOT_REBUILDABLE.test(c.name || '') || (c.count || 0) < 3) return null; // 주상복합·소규모 단지는 재건축 가치를 넣지 않는다
-    if ((p.reconYears || 10) > years) return null; // 60세 전에 입주하지 못하면 넣지 않는다
+    if (c.redev && c.redev.done) return null;
+    const A = reconAssume(c, p);
+    if (A.years > years) return null; // 60세 전에 입주하지 못하면 넣지 않는다
     const raw = dong.newM2 * c.area; // 지금 신축이라면
     const nowNew = Math.min(raw, c.price * 2); // 격차가 2배를 넘으면 다른 상품끼리 비교했을 가능성이 커 2배로 자른다
-    const share = (p.reconShareM2 || 0) * c.area * Math.pow(1 + p.inflation, Math.min(p.reconYears || 10, years));
+    const share = (A.shareM2 || 0) * c.area * Math.pow(1 + p.inflation, Math.min(A.years, years));
     const v60 = nowNew * Math.pow(1 + g, years) - share;
-    return { nowNew, capped: raw > nowNew, share, v60, low: v60 - nowNew * Math.pow(1 + g, years) * 0.15, high: v60 + nowNew * Math.pow(1 + g, years) * 0.15, peers: dong.newN, premium: nowNew / c.price - 1 };
+    return { nowNew, capped: raw > nowNew, share, chance: A.chance, years: A.years, assumeSource: A.source, v60, low: v60 - nowNew * Math.pow(1 + g, years) * 0.15, high: v60 + nowNew * Math.pow(1 + g, years) * 0.15, peers: dong.newN, premium: nowNew / c.price - 1 };
   }
 
   // 입지 점수 (교통·상권·인프라): 좌표·주변 시설을 조회했으면 그것으로, 아니면 구 중심 추정
@@ -185,7 +287,7 @@
     const v60 = c.price * Math.pow(1 + gr.g, years);
     const v60plain = c.price * Math.pow(1 + gRecon, years);
     // 재건축으로 오르는 몫은 성사 가능성만큼만 인정 (손해면 재건축에 기대지 않고 그대로 둔다)
-    const v60r = rb ? v60plain + (p.reconChance ?? 0.6) * Math.max(0, rb.v60 - v60plain) : v60plain;
+    const v60r = rb ? v60plain + rb.chance * Math.max(0, rb.v60 - v60plain) : v60plain;
     // 월 상환 여유분 저축: (기본 한도 − 실제 상환)을 매달 모아 60세에 쓴다
     const saveMonthly = p.saveRest ? Math.max(0, p.pay - payTotal) : 0;
     const mi = p.cashReturn / 12, nm = years * 12;
@@ -281,7 +383,7 @@
     const out = [];
     if (e.c.count < 3) out.push(`최근 거래 ${e.c.count}건뿐이라 시세를 믿기 어려움`);
     if (e.recon) out.push(e.rebuild
-      ? `${e.c.builtYear}년 준공 — 재건축 시 이주 필요, 분담금 약 ${Math.round(e.rebuild.share / MAN).toLocaleString()}만원 가정 (입주까지 ${p.reconYears}년 가정)`
+      ? `${e.c.builtYear}년 준공 — 재건축 시 이주 필요, 분담금 약 ${Math.round(e.rebuild.share / MAN).toLocaleString()}만원 · 입주까지 ${e.rebuild.years}년 · 성사 가능성 ${Math.round(e.rebuild.chance * 100)}% (${e.rebuild.assumeSource})`
       : `${e.c.builtYear}년 준공 — 재건축 가치는 넣지 않거나(주상복합·소규모·입주가 60세 이후) 대략 반영`);
     if (e.rebuild && e.rebuild.capped) out.push('같은 동 신축과 격차가 커서 재건축 뒤 시세를 현재가의 2배로 제한 (다른 상품일 가능성)');
     if (e.need > 0 && !e.bank.dsrChecked) out.push('연소득을 넣지 않아 DSR 한도는 확인하지 않음');
@@ -293,5 +395,5 @@
     return out;
   }
 
-  return { DEFAULTS, TIERS, funds, bankLimit, dongIndex, rebuild, growth, location, retirement, balanceAfter, evaluate, classify, topN, cautions };
+  return { DEFAULTS, TIERS, funds, bankLimit, dongIndex, rebuild, reconAssume, normStage, redevIndex, matchProject, redevChance, oldRegisteredByGu, growth, location, retirement, balanceAfter, evaluate, classify, topN, cautions };
 });

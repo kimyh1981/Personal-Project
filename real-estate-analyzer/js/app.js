@@ -171,7 +171,9 @@
     if (it.currentStage) $('reconStage').value = it.currentStage;
     $('stageDate').value = it.currentStageDate || '';
     liveState.redevPicked = it;
-    $('redevStatus').textContent = `${it.name}: ${P.RECON.stageLabels[it.currentStage] || it.currentStage || '단계 미상'}${it.currentStageDate ? ` (${it.currentStageDate})` : ''} 반영 · 출처 ${liveState.redev.source}`;
+    const L = it.links || {};
+    $('redevStatus').innerHTML = `${esc(it.name)}: ${esc(P.RECON.stageLabels[it.currentStage] || it.currentStage || '단계 미상')}${it.currentStageDate ? ` (${esc(it.currentStageDate)})` : ''} 반영 · 출처 ${esc(liveState.redev.source)}`
+      + (L.cafe || L.map ? ` · 사실 확인: ${L.cafe ? `<a href="${esc(L.cafe)}" target="_blank" rel="noopener">조합 공개 페이지(공지)</a>` : ''}${L.cafe && L.map ? ' · ' : ''}${L.map ? `<a href="${esc(L.map)}" target="_blank" rel="noopener">서울 도시계획 지도</a>` : ''}` : '');
     update();
   }
   async function refreshSources() {

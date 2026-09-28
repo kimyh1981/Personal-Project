@@ -118,6 +118,40 @@ test('같은 동 기준: 동 상승률을 섞고, 30년 넘은 단지는 같은 
   assert.ok(!lone.rebuild && lone.gRecon > lone.growth.g); // 같은 동 신축이 없으면 +0.7%p
 });
 
+test('정비사업: 단계 보정, 지번·이름으로 사업장 찾기, 주변 사례 완료 비율로 가능성·입주까지 기간', () => {
+  assert.equal(T.normStage('사업시행자지정'), '조합설립인가');
+  assert.equal(T.normStage('정비계획 수립'), '기본계획수립');
+  assert.equal(T.normStage('조합해산'), '준공');
+  const rows = [
+    ['강남구', '재건축', '은하아파트 재건축정비사업조합', '가동 316', '사업시행인가', 'eunha', '11680A'],
+    ['강남구', '재건축', '특별계획구역③ 재건축정비사업 조합', '나동 369-1', '조합설립인가', 'zone3', ''],
+    ...Array.from({ length: 6 }, (_, i) => ['강남구', '재건축', `완료${i}`, `다동 ${i}`, '조합해산', '', '']),
+    ...Array.from({ length: 4 }, (_, i) => ['강남구', '재건축', `진행${i}`, `라동 ${i}`, '추진위원회승인', '', '']),
+    ['강남구', '가로주택정비', '빌라', '가동 1', '착공', '', ''],
+  ];
+  const ri = T.redevIndex({ cols: ['자치구', '사업구분', '사업장명', '대표지번', '진행단계', 'cafe', 'rec'], rows });
+  assert.equal(ri.projects.length, rows.length - 1); // 가로주택정비는 뺀다
+  const byName = T.matchProject({ regionId: 'seoul-강남구', dong: '가동', name: '은하', jibun: '' }, ri);
+  assert.equal(byName.cafe, 'eunha');
+  const byLot = T.matchProject({ regionId: 'seoul-강남구', dong: '나동', name: '현대1차', jibun: '369-1' }, ri);
+  assert.equal(byLot.stage, '조합설립인가');
+  const ch = T.redevChance({ regionId: 'seoul-강남구', dong: '가동', name: '은하', jibun: '316' }, ri, new Map());
+  assert.equal(ch.stage, '사업시행인가');
+  assert.equal(ch.years, 6);
+  assert.ok(ch.chance > 0.5 && ch.doneN === 6); // 사업시행인가 이상 7곳 중 6곳 완료
+  const none = T.redevChance({ regionId: 'seoul-강남구', dong: '마동', name: '없는단지', jibun: '9' }, ri, new Map([['강남구', { total: 10, registered: 5 }]]));
+  assert.ok(!none.project && Math.abs(none.startRate - 0.5) < 1e-9 && none.chance < ch.chance);
+});
+
+test('재건축 가정 우선순위: 직접 입력 > 정비사업 단계·주변 사례 > 내 기준 기본값', () => {
+  const p = profile({ reconChance: 0.6, reconYears: 10, reconShareM2: 300 * MAN, reconOverrides: { X: { years: 4 } } });
+  assert.equal(T.reconAssume({ id: 'Y' }, p).source, '내 기준 기본값');
+  const est = T.reconAssume({ id: 'Y', redev: { chance: 0.37, years: 8 } }, p);
+  assert.equal(est.chance, 0.37); assert.equal(est.years, 8); assert.match(est.source, /주변 사례/);
+  const ov = T.reconAssume({ id: 'X', redev: { chance: 0.37, years: 8 } }, p);
+  assert.equal(ov.years, 4); assert.equal(ov.chance, 0.37); assert.equal(ov.source, '직접 입력');
+});
+
 test('노후 월소득: 집을 줄여 옮긴 차액 인출과 주택연금 중 큰 값 (현재 가치)', () => {
   const p = profile();
   const r = T.retirement(20 * EOK, 0, p, 15);

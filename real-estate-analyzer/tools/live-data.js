@@ -215,7 +215,8 @@ async function cleanupSearch(q, fresh, ttl) {
     try {
       const rows = parseCleanupList(await getText(`${CLEANUP_URL}?scupBsnsSttus.asscNm=${encodeURIComponent(needle)}`));
       track('redevSeoul', true, `${rows.length}건`);
-      const items = rows.map((r) => normalizeRedevRow({ ...r, 대표지번: [r['자치구'], r['대표지번']].filter(Boolean).join(' ') }, '서울'));
+      const { cleanupLinks } = require('../js/direct.js');
+      const items = rows.map((r) => ({ ...normalizeRedevRow({ ...r, 대표지번: [r['자치구'], r['대표지번']].filter(Boolean).join(' ') }, '서울'), links: cleanupLinks(r) }));
       return { items, total: items.length, fetchedAt: new Date().toISOString(), source: '서울시 정비사업 정보몽땅' };
     } catch (err) { track('redevSeoul', false, err.message); throw err; }
   });
