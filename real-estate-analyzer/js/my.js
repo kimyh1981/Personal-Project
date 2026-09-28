@@ -19,16 +19,31 @@
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) { /* 무시 */ } };
 
   // ── 개인 설정 링크 ───────────────────────────────────────────────────
-  function readSetupHash() {
-    const m = location.hash.match(/setup=([A-Za-z0-9_-]+)/);
+  // 설정 코드: 개인 설정 링크 전체나 setup= 뒤의 코드
+  function decodeSetup(text) {
+    const m = String(text || '').match(/setup=([A-Za-z0-9_-]+)/) || String(text || '').trim().match(/^([A-Za-z0-9_-]{40,})$/);
     if (!m) return null;
-    try {
-      const json = decodeURIComponent(escape(atob(m[1].replace(/-/g, '+').replace(/_/g, '/'))));
-      const p = JSON.parse(json);
-      history.replaceState(null, '', location.pathname); // 주소에서 지운다
-      return p;
-    } catch (_) { return null; }
+    try { return JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g, '+').replace(/_/g, '/'))))); } catch (_) { return null; }
   }
+  function readSetupHash() {
+    const p = decodeSetup(location.hash);
+    if (p) history.replaceState(null, '', location.pathname); // 주소에서 지운다
+    return p;
+  }
+  // 설치된 앱은 브라우저와 저장 공간이 달라, 링크 대신 앱 안에서 붙여넣을 수 있게 한다
+  function setupPasteHtml() {
+    return `<div class="setup-paste">
+      <label class="f wide">개인 설정 링크 붙여넣기 <span class="unit">받은 링크 전체를 붙여넣으세요</span><textarea id="setupPaste" rows="3" placeholder="https://kimyh1981.github.io/Personal-Project/my.html#setup=..."></textarea></label>
+      <div class="row"><button type="button" class="primary" id="setupApply">내 기준 불러오기</button><span class="muted" id="setupMsg"></span></div>
+    </div>`;
+  }
+  document.addEventListener('click', (e) => {
+    if (e.target.id !== 'setupApply') return;
+    const p = decodeSetup($('setupPaste').value);
+    if (!p) { $('setupMsg').textContent = '링크를 읽지 못했습니다. 링크 전체를 그대로 붙여넣어 주세요.'; return; }
+    profile = { ...T.DEFAULTS, ...p }; save(KEY, profile);
+    renderForm(); run(true);
+  });
   let profile = { ...T.DEFAULTS, ...(load(KEY, {})) };
   const fromLink = readSetupHash();
   if (fromLink) { profile = { ...T.DEFAULTS, ...fromLink }; save(KEY, profile); }
@@ -188,7 +203,8 @@
   function renderEmpty() {
     $('myTitle').textContent = '내 맞춤 추천';
     $('myStatus').innerHTML = `<h3>내 기준이 아직 없습니다</h3>
-      <p class="muted">받으신 <b>개인 설정 링크</b>로 한 번 열면 조건이 이 기기에 저장됩니다. 또는 아래 '내 기준'을 직접 채우세요.</p>`;
+      <p class="muted">이 기기(또는 설치된 앱)에는 조건이 저장돼 있지 않습니다. 받으신 <b>개인 설정 링크</b>를 아래에 붙여넣으면 한 번에 채워집니다. 또는 아래 '내 기준'을 직접 채우세요.</p>
+      ${setupPasteHtml()}`;
     $('myTiers').innerHTML = ''; $('tierNav').innerHTML = '';
     $('myProfileCard').open = true;
   }
@@ -351,4 +367,13 @@
 
   renderForm();
   run(true);
+  // 내 기준 카드 안에도 붙여넣기 칸 (다른 기기 조건으로 덮어쓰기)
+  (function () {
+    const w = document.getElementById('setupPasteWrap');
+    if (w) w.innerHTML = '<details class="setup-more"><summary>개인 설정 링크로 다시 채우기</summary>' + '<p class="muted">붙여넣으면 지금 기준을 링크 내용으로 바꿉니다.</p>' + '<div class="setup-slot"></div></details>';
+    w && w.addEventListener('toggle', () => {
+      const slot = w.querySelector('.setup-slot');
+      if (slot && !slot.innerHTML && !document.getElementById('setupPaste')) slot.innerHTML = setupPasteHtml();
+    }, true);
+  })();
 })();
