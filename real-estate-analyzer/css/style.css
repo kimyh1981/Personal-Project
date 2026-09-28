@@ -815,3 +815,17 @@ a.map-btn:active { opacity: .7; }
 .rule-ctl .reset { flex: 0 0 auto; border: 0; background: none; color: var(--tint); font: 13px var(--font); padding: 8px 4px; }
 .rule-count { font-size: 12px; color: var(--label-3); }
 .rule-body textarea { overflow: hidden; }
+/* 사용 안내 페이지 */
+.guide-main { display: grid; gap: 16px; max-width: 760px; margin: 0 auto; }
+.guide-video video { display: block; width: 100%; max-height: 78vh; aspect-ratio: 9 / 20; margin: 0 auto 14px; border-radius: 16px; background: #000; object-fit: contain; }
+.chapters { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; counter-reset: ch; }
+.chapters button { width: 100%; text-align: left; padding: 10px 12px; border-radius: 12px; border: 0; background: var(--fill, rgba(120,120,128,.12)); color: inherit; font: inherit; font-size: 14.5px; cursor: pointer; }
+.chapters button::before { counter-increment: ch; content: counter(ch); display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 8px; border-radius: 50%; background: var(--tint, #007aff); color: #fff; font-size: 12px; font-weight: 700; }
+.chapters button:active { opacity: .7; }
+.install-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 10px; }
+.install-grid section { padding: 12px 14px; border-radius: 14px; background: var(--fill, rgba(120,120,128,.08)); }
+.install-grid h4 { margin: 0 0 6px; font-size: 15.5px; }
+.install-steps { margin: 0; padding: 0; list-style: none; counter-reset: st; display: grid; gap: 5px; font-size: 15px; line-height: 1.55; color: var(--label-2-solid); }
+.install-steps li { counter-increment: st; padding-left: 22px; text-indent: -22px; }
+.install-steps li::before { content: counter(st) '.'; display: inline-block; width: 22px; text-indent: 0; font-weight: 700; color: var(--tint, #007aff); }
+.guide-link b { color: var(--tint); }

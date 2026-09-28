@@ -2,9 +2,9 @@
 // - 앱 파일: 네트워크 우선(항상 최신), 오프라인이면 캐시
 // - /api/ (공공데이터): 절대 캐시하지 않음 — 최신 데이터만 쓴다
 // - 글꼴: 캐시 우선
-const VERSION = 'rea-v7';
+const VERSION = 'rea-v8';
 const SHELL = [
-  './', 'index.html', 'my.html', 'manifest.webmanifest', 'css/style.css',
+  './', 'index.html', 'my.html', 'guide.html', 'manifest.webmanifest', 'css/style.css',
   'js/policy.js', 'js/amount.js', 'js/engine.js', 'js/conditions.js', 'js/vworld.js', 'js/direct.js', 'js/geo.js', 'js/recommend.js', 'js/charts.js', 'js/app.js', 'js/pwa.js', 'js/tiers.js', 'js/my.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png',
 ];
@@ -34,6 +34,7 @@ self.addEventListener('fetch', (e) => {
     return;
   }
   if (url.origin !== location.origin) return;
+  if (url.pathname.includes('/media/')) return; // 안내 영상은 크고 구간 요청이라 캐시하지 않는다
   e.respondWith(fetch(req).then((res) => {
     if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
     return res;
