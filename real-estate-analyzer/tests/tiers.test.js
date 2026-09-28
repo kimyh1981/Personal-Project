@@ -96,6 +96,28 @@ test('상환 여유분 저축: 기본 한도 − 실제 상환을 매달 모아 
   assert.equal(cash.saveMonthly, on.pay); // 대출이 없으면 기본 한도 전액 저축
 });
 
+test('같은 동 기준: 동 상승률을 섞고, 30년 넘은 단지는 같은 동 신축 ㎡당가 × 면적 − 분담금으로 재건축 가치', () => {
+  const p = profile();
+  const list = [
+    { id: 'n1', name: '신축1', regionId: 'seoul-송파구', dong: '가락동', area: 84, price: 20 * EOK, count: 6, builtYear: 2020, g5: 0.04, g10: 0.06 },
+    { id: 'n2', name: '신축2', regionId: 'seoul-송파구', dong: '가락동', area: 84, price: 18 * EOK, count: 4, builtYear: 2018, g5: 0.03, g10: 0.05 },
+    { id: 'o1', name: '구축', regionId: 'seoul-송파구', dong: '가락동', area: 84, price: 14 * EOK, count: 5, builtYear: 1988, g5: null, g10: null },
+  ];
+  const idx = T.dongIndex(list, 2026);
+  const d = idx.get('seoul-송파구|가락동');
+  assert.equal(d.newN, 2);
+  assert.ok(Math.abs(d.newM2 - 19 * EOK / 84) < 1);
+  const g = T.growth(list[2], { cagr5: 0.03, cagr10: 0.05 }, p, d);
+  assert.equal(g.dongG, d.g);
+  assert.match(g.basis, /같은 동/);
+  const e = T.evaluate(cand({ ...list[2] }), p, reg, T.funds(p), d);
+  assert.ok(e.rebuild && Math.abs(e.rebuild.nowNew - 19 * EOK) < 1);
+  assert.ok(e.rebuild.share > 300 * MAN * 84); // 입주까지 물가만큼 증가
+  assert.ok(e.v60r > e.v60); // 신축 시세로 수렴 − 분담금이 그대로 두는 것보다 큼
+  const lone = T.evaluate(cand({ ...list[2], dong: '없는동' }), p, reg, T.funds(p), undefined);
+  assert.ok(!lone.rebuild && lone.gRecon > lone.growth.g); // 같은 동 신축이 없으면 +0.7%p
+});
+
 test('노후 월소득: 집을 줄여 옮긴 차액 인출과 주택연금 중 큰 값 (현재 가치)', () => {
   const p = profile();
   const r = T.retirement(20 * EOK, 0, p, 15);

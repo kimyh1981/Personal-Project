@@ -38,7 +38,7 @@
   const FIELDS = [
     ['cgtReserve', 'won'], ['cashReserve', 'won'], ['pay', 'won'], ['payMax', 'won'], ['payPlusRatio', 'num'], ['payHigh', 'won'],
     ['annualIncome', 'won'], ['loanTerm', 'num'], ['loanRate', 'pct'], ['plusRate', 'pct'], ['name', 'text'], ['age', 'num'], ['targetAge', 'num'],
-    ['retireNeed', 'won'], ['postIncome', 'won'], ['downsizeHome', 'won'], ['growthAdjust', 'pct'], ['minArea', 'num'],
+    ['retireNeed', 'won'], ['reconShareM2', 'won'], ['reconYears', 'num'], ['reconChance', 'pct'], ['postIncome', 'won'], ['downsizeHome', 'won'], ['growthAdjust', 'pct'], ['minArea', 'num'],
   ];
   const toView = (v, t) => (t === 'won' ? (v ? Math.round(v / MAN) : '') : t === 'pct' ? +(v * 100).toFixed(2) : v ?? '');
   const fromView = (s, t) => (t === 'text' ? s : t === 'won' ? (Number(s) || 0) * MAN : t === 'pct' ? (Number(s) || 0) / 100 : Number(s) || 0);
@@ -153,7 +153,8 @@
       if (!market) { status('<p class="muted">서울 시장 데이터를 불러오는 중…</p>'); await loadMarket(); }
       const f = T.funds(profile);
       const all = candidates();
-      let evals = all.map((c) => T.evaluate(c, profile, market.regions[c.regionId], f));
+      const dongs = T.dongIndex(all);
+      let evals = all.map((c) => T.evaluate(c, profile, market.regions[c.regionId], f, dongs.get(c.regionId + '|' + c.dong)));
       let res = T.classify(evals, profile);
       let enriched = false;
       if (withEnrich) {
@@ -161,7 +162,7 @@
         for (let round = 0; round < 2; round++) {
           const short = [...new Set(T.topN(res, 8).flatMap((t) => t.items.map((x) => x.e.c)))];
           enriched = await enrich(short, (t) => status(`<p class="muted">${round ? '새로 올라온 후보 ' : ''}${esc(t)}</p>`));
-          evals = all.map((c) => T.evaluate(c, profile, market.regions[c.regionId], f));
+          evals = all.map((c) => T.evaluate(c, profile, market.regions[c.regionId], f, dongs.get(c.regionId + '|' + c.dong)));
           res = T.classify(evals, profile);
           if (!enriched) break;
         }
@@ -265,7 +266,9 @@
         <tr><td>월 상환 (${e.term}년 만기)</td><td class="n">${manw(e.payTotal)}</td></tr>
         ${e.debt60 > 0 ? `<tr><td>${p.targetAge}세에 남는 대출 (집 팔아 상환)</td><td class="n">${won(e.debt60)}</td></tr>` : ''}` : `<tr><td>대출 없이 남는 돈</td><td class="n">${won(e.leftover)}</td></tr>`}
         ${e.saveMonthly > 0 ? `<tr><td>상환 여유분 저축 (월 ${manw(e.saveMonthly)}, 연 ${pct(p.cashReturn, 1)})</td><td class="n">${p.targetAge}세 ${won(e.save60)}</td></tr>` : ''}
-        <tr><td>예상 연 상승률 (${esc(e.growth.basis)}${useRecon && e.recon ? ' + 재건축' : ''})</td><td class="n">${pct(useRecon ? e.gRecon : e.growth.g)}</td></tr>
+        <tr><td>예상 연 상승률 (${esc(e.growth.basis)}${useRecon && e.recon && !e.rebuild ? ' + 재건축 0.7%p' : ''})</td><td class="n">${pct(useRecon ? e.gRecon : e.growth.g)}</td></tr>
+        ${useRecon && e.rebuild ? `<tr><td>재건축 뒤 (같은 동 신축 ${e.rebuild.peers}곳 ㎡당가 기준)</td><td class="n">지금 신축이면 ${won(e.rebuild.nowNew)} (현재가 대비 ${e.rebuild.premium >= 0 ? '+' : ''}${Math.round(e.rebuild.premium * 100)}%) · 분담금 −${won(e.rebuild.share)} · 성사 가능성 ${Math.round((p.reconChance ?? 0.6) * 100)}% 반영</td></tr>
+        <tr><td>${p.targetAge}세 재건축 뒤 예상 범위 (±15%)</td><td class="n">${won(e.rebuild.low)} ~ ${won(e.rebuild.high)}</td></tr>` : ''}
         <tr><td>${p.targetAge}세 예상 시세${e.debt60 > 0 ? ' → 대출 갚고 남는 돈' : ''}</td><td class="n">${won(v60)}${e.debt60 > 0 ? ` → ${won(v60 - e.debt60)}` : ''}</td></tr>
         <tr><td>노후 월소득 (현재 가치, ${esc(ret.method)}${t.id === 'xb' ? ' + 남는 돈 운용' : ''}${t.id === 't4' ? ', 저축 제외' : ret.extraReal > 0 ? ' + 저축' : ''})</td><td class="n"><b>${manw(ret.monthly)}</b> · 목표의 ${Math.round(ratio * 100)}%</td></tr>
         <tr><td>입지 점수 ${e.loc.estimated ? '(추정)' : ''}</td><td class="n">${e.loc.score}점${e.loc.commute != null ? ` · 업무지구 약 ${e.loc.commute}분` : ''}${c.subwayMin != null ? ` · ${esc(c.stationName || '역')} 도보 ${c.subwayMin}분` : ''}</td></tr>
@@ -282,7 +285,8 @@
     '대출은 만기(기본 30년)로 매달 갚다가, 60세에 남은 대출은 집을 팔아 한 번에 갚고 후순위 지역의 작은 집으로 옮긴다고 봅니다. 노후 자금 = 60세 시세 − 남은 대출 − 옮겨 살 집 + 상환 여유분 저축.',
     '상환 여유분 저축: 월 상환 기본 한도에서 실제 상환액을 뺀 나머지를 매달 연 3%로 모은다고 봅니다 (대출 없는 3·4순위는 기본 한도 전액). 내 기준에서 끌 수 있습니다.',
     '은행 한도를 넘는 돈은 추가 자금(가족 차입·개인 근저당 등)으로 보고 같은 기간 상환으로 계산합니다.',
-    '미래 시세는 단지와 구의 과거 5년·10년 ㎡당 연평균 상승률을 섞은 뒤 보수적으로 1.5%p 낮추고, 연 5.5%를 넘지 않게 합니다. 30년 넘은 단지는 재건축 기대를 2순위·5순위·추가 A에서만 0.7%p 더합니다.',
+    '미래 시세는 단지(40%)·같은 동(40%)·구(20%)의 과거 5년·10년 ㎡당 연평균 상승률을 섞은 뒤 보수적으로 1.5%p 낮추고, 연 5.5%를 넘지 않게 합니다. 서울 실거래 검증에서 같은 동 상승률을 쓰면 5년 뒤 시세 오차가 5%로, 구 상승률(10%)보다 잘 맞았습니다.',
+    '30년 넘은 단지(2순위·5순위·추가 A): 재건축 뒤 시세 = 같은 동 준공 15년 이내 신축의 ㎡당가 × 면적(현재가의 2배 상한) − 분담금(입주까지 물가만큼 증가). 오르는 몫은 성사 가능성(기본 60%)만큼만 인정합니다. 주상복합·소규모 단지·60세 이후 입주는 넣지 않습니다. 검증에서 신축은 같은 동 준신축 시세에 오차 중앙값 12%, 편향 거의 0으로 맞춰졌지만, 구축이 재건축되기까지의 기간·분담금·성사 여부는 공공데이터로 검증할 수 없는 가정입니다.',
     '노후 월소득은 60세 시세를 현재 가치로 바꾼 뒤, 집을 줄여 옮기고 차액을 연 4%로 쓰는 경우와 주택연금 중 큰 값입니다. 국민연금·퇴직연금은 넣지 않았습니다.',
     '입지(교통·상권·인프라) 45점 미만은 모든 순위에서 뺍니다. 한 단지는 가장 높은 순위에 한 번만 나옵니다.',
     '서울 시장 데이터는 매주 월요일 국토부 실거래가(최근 6개월 매매·전월세, 5·10년 전 매매)로 새로 모읍니다. 이 페이지를 열 때마다 최신 데이터로 다시 계산합니다.',

@@ -29,6 +29,9 @@
     pay: 300 * MAN, payMax: 350 * MAN, payPlusRatio: 1.5, payHigh: 1000 * MAN,
     loanRate: 0.04, plusRate: 0.05, // 새 주담대 금리, 추가 자금(개인 차입 등) 금리
     loanTerm: 30, // 대출 만기(년). 60세에 남은 대출은 집을 팔아 한 번에 갚고 후순위 지역으로 옮긴다
+    reconShareM2: 300 * MAN, // 재건축 분담금 가정 (전용㎡당, 현재 돈). 84㎡면 약 2.5억
+    reconYears: 10, // 재건축 입주까지 가정 (년). 분담금은 이 기간 물가만큼 오른다
+    reconChance: 0.6, // 재건축이 60세 전에 끝날 가능성. 오르는 몫에 곱한다
     saveRest: true, // 월 상환 기본 한도에서 실제 상환을 뺀 나머지를 매달 저축해 60세 노후 자금에 더한다
     retireNeed: 350 * MAN, // 노후 월 생활비 (현재 돈 가치)
     postIncome: 300 * MAN, // 60세 이후 월 소득 (3순위 가정)
@@ -66,14 +69,56 @@
   }
 
   // 미래 상승률: 단지 5·10년 CAGR과 구 CAGR을 섞고 보수적으로 깎는다
-  function growth(c, reg, p) {
+  const median = (a) => { if (!a.length) return null; const x = a.slice().sort((m, n) => m - n), k = x.length >> 1; return x.length % 2 ? x[k] : (x[k - 1] + x[k]) / 2; };
+
+  /**
+   * 같은 동 통계. 실거래 검증(2021→2026)에서 신축은 같은 동 준신축 ㎡당가에 맞춰지고(오차 중앙값 12%, 편향 ≈0),
+   * 5년 뒤 시세는 같은 동 단지 상승률을 적용할 때 가장 잘 맞았다(오차 5%, 구 상승률은 10%).
+   * cands: [{ id, regionId, dong, area, price, count, builtYear, g5, g10 }]
+   */
+  function dongIndex(cands, thisYear = new Date().getFullYear()) {
+    const by = new Map();
+    for (const c of cands) {
+      const k = c.regionId + '|' + c.dong;
+      if (!by.has(k)) by.set(k, []);
+      by.get(k).push(c);
+    }
+    const out = new Map();
+    for (const [k, list] of by) {
+      const gs = list.map((c) => (c.g5 != null && c.g10 != null ? (c.g5 + c.g10) / 2 : c.g5 != null ? c.g5 : c.g10)).filter((x) => x != null);
+      const fresh = list.filter((c) => c.builtYear && thisYear - c.builtYear <= 15 && c.area >= 49 && c.area <= 135 && c.count >= 2);
+      out.set(k, {
+        g: gs.length >= 2 ? median(gs) : null, gN: gs.length,
+        newM2: fresh.length >= 2 ? median(fresh.map((c) => c.price / c.area)) : null, newN: new Set(fresh.map((c) => c.name)).size,
+      });
+    }
+    return out;
+  }
+
+  function growth(c, reg, p, dong) {
     const avg = (a, b) => (a != null && b != null ? (a + b) / 2 : a != null ? a : b);
     const regionG = reg ? avg(reg.cagr5, reg.cagr10) : null;
     const complexG = avg(c.g5, c.g10);
-    let g = complexG != null && regionG != null ? 0.5 * complexG + 0.5 * regionG : complexG != null ? complexG : regionG != null ? regionG : 0.03;
-    const basis = complexG != null ? '단지·구 과거 상승률' : regionG != null ? '구 과거 상승률' : '기본 3%';
+    const dongG = dong && dong.g != null ? dong.g : null;
+    const parts = [[complexG, 0.4], [dongG, 0.4], [regionG, 0.2]].filter((x) => x[0] != null);
+    const w = parts.reduce((a, x) => a + x[1], 0);
+    let g = w ? parts.reduce((a, x) => a + x[0] * x[1], 0) / w : 0.03;
+    const basis = [complexG != null && '단지', dongG != null && '같은 동', regionG != null && '구'].filter(Boolean).join('·') + (w ? ' 과거 상승률' : '기본 3%');
     g = clamp(g + (p.growthAdjust || 0), 0, 0.055); // 과거 급등기(2016~2021)가 섞여 있어 보수적으로
-    return { g, basis, complexG, regionG };
+    return { g, basis, complexG, dongG, regionG };
+  }
+
+  // 재건축 뒤 시세: 같은 동 신축(15년 이내) ㎡당가 × 면적, 분담금은 입주까지 물가만큼 오른다
+  const NOT_REBUILDABLE = /타워|주상복합|오피스텔|빌딩|파크텔|스카이|트윈/;
+  function rebuild(c, p, dong, g, years) {
+    if (!dong || !dong.newM2) return null;
+    if (NOT_REBUILDABLE.test(c.name || '') || (c.count || 0) < 3) return null; // 주상복합·소규모 단지는 재건축 가치를 넣지 않는다
+    if ((p.reconYears || 10) > years) return null; // 60세 전에 입주하지 못하면 넣지 않는다
+    const raw = dong.newM2 * c.area; // 지금 신축이라면
+    const nowNew = Math.min(raw, c.price * 2); // 격차가 2배를 넘으면 다른 상품끼리 비교했을 가능성이 커 2배로 자른다
+    const share = (p.reconShareM2 || 0) * c.area * Math.pow(1 + p.inflation, Math.min(p.reconYears || 10, years));
+    const v60 = nowNew * Math.pow(1 + g, years) - share;
+    return { nowNew, capped: raw > nowNew, share, v60, low: v60 - nowNew * Math.pow(1 + g, years) * 0.15, high: v60 + nowNew * Math.pow(1 + g, years) * 0.15, peers: dong.newN, premium: nowNew / c.price - 1 };
   }
 
   // 입지 점수 (교통·상권·인프라): 좌표·주변 시설을 조회했으면 그것으로, 아니면 구 중심 추정
@@ -120,7 +165,7 @@
   /**
    * 한 단지 평가. c: { regionId, name, dong, area, price, jeonse, count, builtYear, g5, g10, coords?, subwayMin?, infra? }
    */
-  function evaluate(c, p, reg, f) {
+  function evaluate(c, p, reg, f, dong) {
     const years = Math.max(1, p.targetAge - p.age);
     const term = Math.max(years, p.loanTerm || years); // 만기가 60세보다 길면 남은 대출은 60세에 집을 팔아 갚는다
     const costs = E.closingCosts({ price: c.price, regionId: c.regionId, homesAfter: 1, temporaryTwo: false, areaOver85: c.area > 85, firstTime: false, publicPrice: c.price * 0.69, vat: true, propertyType: '아파트' }).total;
@@ -131,12 +176,16 @@
     const payBank = E.pmt(loan, p.loanRate, term * 12);
     const payPlus = E.pmt(plus, p.plusRate, term * 12);
     const payTotal = payBank + payPlus;
-    const gr = growth(c, reg, p);
+    const gr = growth(c, reg, p, dong);
     const recon = c.builtYear && new Date().getFullYear() - c.builtYear >= 30;
-    const gRecon = recon ? Math.min(0.08, gr.g + 0.007) : gr.g; // 재건축 연한: 이주·분담금을 감수하면 +0.7%p
+    // 재건축 연한: 같은 동 신축 시세로 재건축 뒤 가치를 잡고 분담금을 뺀다. 같은 동에 신축이 없으면 +0.7%p로 대신
+    const rb = recon ? rebuild(c, p, dong, gr.g, Math.max(1, p.targetAge - p.age)) : null;
+    const gRecon = recon && !rb && (!dong || dong.newM2 == null) ? Math.min(0.08, gr.g + 0.007) : gr.g; // 같은 동 신축 정보가 없을 때만 +0.7%p
     const leftover = Math.max(0, -need);
     const v60 = c.price * Math.pow(1 + gr.g, years);
-    const v60r = c.price * Math.pow(1 + gRecon, years);
+    const v60plain = c.price * Math.pow(1 + gRecon, years);
+    // 재건축으로 오르는 몫은 성사 가능성만큼만 인정 (손해면 재건축에 기대지 않고 그대로 둔다)
+    const v60r = rb ? v60plain + (p.reconChance ?? 0.6) * Math.max(0, rb.v60 - v60plain) : v60plain;
     // 월 상환 여유분 저축: (기본 한도 − 실제 상환)을 매달 모아 60세에 쓴다
     const saveMonthly = p.saveRest ? Math.max(0, p.pay - payTotal) : 0;
     const mi = p.cashReturn / 12, nm = years * 12;
@@ -149,7 +198,7 @@
     const retHome = retirement(v60, 0, p, years, debt60); // 저축 없이 집만으로 (4순위)
     const loc = location(c);
     return {
-      c, years, term, debt60, saveMonthly, save60, costs, need, bank, loan, plus, payBank, payPlus, payTotal, growth: gr, recon, gRecon, leftover,
+      c, years, term, debt60, saveMonthly, save60, costs, need, bank, loan, plus, payBank, payPlus, payTotal, growth: gr, recon, gRecon, rebuild: rb, leftover,
       v60, v60r, cash60, ret, retRecon, retCash, loc,
       retHome, ratioHome: retHome.monthly / p.retireNeed,
       ratio: ret.monthly / p.retireNeed, ratioRecon: retRecon.monthly / p.retireNeed, ratioCash: retCash.monthly / p.retireNeed,
@@ -231,7 +280,10 @@
   function cautions(e, p) {
     const out = [];
     if (e.c.count < 3) out.push(`최근 거래 ${e.c.count}건뿐이라 시세를 믿기 어려움`);
-    if (e.recon) out.push(`${e.c.builtYear}년 준공 — 재건축 시 이주·분담금 필요`);
+    if (e.recon) out.push(e.rebuild
+      ? `${e.c.builtYear}년 준공 — 재건축 시 이주 필요, 분담금 약 ${Math.round(e.rebuild.share / MAN).toLocaleString()}만원 가정 (입주까지 ${p.reconYears}년 가정)`
+      : `${e.c.builtYear}년 준공 — 재건축 가치는 넣지 않거나(주상복합·소규모·입주가 60세 이후) 대략 반영`);
+    if (e.rebuild && e.rebuild.capped) out.push('같은 동 신축과 격차가 커서 재건축 뒤 시세를 현재가의 2배로 제한 (다른 상품일 가능성)');
     if (e.need > 0 && !e.bank.dsrChecked) out.push('연소득을 넣지 않아 DSR 한도는 확인하지 않음');
     if (e.payTotal > p.pay && e.payTotal <= p.payMax) out.push(`월 상환 ${Math.round(e.payTotal / MAN)}만원 (기본 ${Math.round(p.pay / MAN)}만원 초과, 최대 한도 이내)`);
     if (e.debt60 > 0) out.push(`${p.targetAge}세에 남는 대출 약 ${Math.round(e.debt60 / MAN).toLocaleString()}만원은 집을 팔아 갚는 계획 (시세가 오르지 않으면 부담)`);
@@ -241,5 +293,5 @@
     return out;
   }
 
-  return { DEFAULTS, TIERS, funds, bankLimit, growth, location, retirement, balanceAfter, evaluate, classify, topN, cautions };
+  return { DEFAULTS, TIERS, funds, bankLimit, dongIndex, rebuild, growth, location, retirement, balanceAfter, evaluate, classify, topN, cautions };
 });
