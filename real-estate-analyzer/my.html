@@ -14,10 +14,14 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="my-page">
+<nav class="ios-nav" aria-label="상단 메뉴">
+  <a class="ios-back" href="./" aria-label="매수 판단기로 돌아가기">돌아가기</a>
+  <span class="ios-title">내 맞춤 추천</span>
+  <span class="ios-spacer"></span>
+</nav>
 <div class="app">
   <header class="masthead">
     <div>
-      <a class="back-btn" href="./" aria-label="매수 판단기로 돌아가기">&lt; 돌아가기</a>
       <p class="eyebrow">매주 월요일 서울 실거래로 갱신</p>
       <h1 id="myTitle">내 맞춤 추천</h1>
     </div>
@@ -26,6 +30,7 @@
 
   <main class="my-main">
     <div class="card" id="myStatus"><p class="muted">불러오는 중…</p></div>
+    <div class="card" id="tierRules" hidden></div>
     <nav class="tier-nav" id="tierNav" aria-label="순위 바로가기"></nav>
     <div id="myTiers"></div>
 

@@ -318,51 +318,78 @@
   ];
 
   // 순위별 조건과 점수. 입지 점수 45점 미만은 모든 순위에서 뺀다 (교통·상권·인프라는 기본 조건)
+  /**
+   * 순위 규칙. 기본값은 요청한 1~5순위 정의이고, 사용자가 화면에서 바꾼 항목(p.tierRules[id])만 덮어쓴다.
+   *  loan: none(대출 없이) | bank(은행 대출만) | plus(은행 + 추가 자금) | need(대출 필요, 방식 무관) | any
+   *  pay: 월 상환 한도(원), minPct: 노후 목표 대비 %, recon: 재건축 기대 반영, homeOnly: 저축 빼고 집만으로,
+   *  postIncome: 60세 이후 소득을 더해 노후 판단, cash: 남는 돈 운용 포함, onlyOld: 30년 넘은 단지만, vsBest: 1~4순위 최고 대비 배수
+   */
+  function defaultRules(p) {
+    return {
+      t1: { loan: 'bank', pay: p.payMax, minPct: 100, recon: false },
+      t2: { loan: 'plus', pay: p.pay * p.payPlusRatio, minPct: 130, recon: true },
+      t3: { loan: 'none', pay: null, minPct: 50, recon: false, postIncome: true },
+      t4: { loan: 'none', pay: null, minPct: 100, recon: false, homeOnly: true },
+      t5: { loan: 'need', pay: p.payHigh, minPct: 200, recon: true, vsBest: 1.3 },
+      xa: { loan: 'bank', pay: p.payMax, minPct: 130, recon: true, onlyOld: true },
+      xb: { loan: 'none', pay: null, minPct: 100, recon: false, cash: true, leftoverMin: 1 * EOK },
+    };
+  }
+  function rulesFor(p) {
+    const d = defaultRules(p), ov = p.tierRules || {};
+    return Object.fromEntries(Object.entries(d).map(([id, r]) => {
+      const o = ov[id] || {};
+      const m = { ...r };
+      for (const k of ['loan', 'pay', 'minPct', 'recon']) if (o[k] !== undefined && o[k] !== null && o[k] !== '') m[k] = o[k];
+      m.comment = o.comment || '';
+      m.custom = ['loan', 'pay', 'minPct', 'recon'].some((k) => o[k] !== undefined && o[k] !== null && o[k] !== '');
+      return [id, m];
+    }));
+  }
+  const LOAN_OK = {
+    none: (e) => e.need <= 0, bank: (e) => e.need > 0 && e.plus === 0, plus: (e) => e.plus > 0, need: (e) => e.need > 0, any: () => true,
+  };
+  const retFor = (r, e) => (r.recon ? e.retRecon : r.cash ? e.retCash : r.homeOnly ? e.retHome : e.ret);
+  const valueFor = (r, e) => retFor(r, e).monthly / e.pRetireNeed;
+
+  // 순위별 조건과 점수. 입지 점수 45점 미만은 모든 순위에서 뺀다 (교통·상권·인프라는 기본 조건)
   function classify(evals, p) {
     const MIN_LOC = 45;
+    const R = rulesFor(p);
     const ok = evals.filter((e) => e.loc.score >= MIN_LOC && e.c.area >= p.minArea && e.c.area <= p.maxArea && e.c.count >= 1);
-    const payLimit2 = p.pay * p.payPlusRatio;
-    const pick = {
-      t1: (e) => e.need > 0 && e.plus === 0 && e.payTotal <= p.payMax && e.ratio >= 1,
-      t2: (e) => e.plus > 0 && e.payTotal <= payLimit2 && e.ratioRecon >= 1.3,
-      t3: (e) => e.need <= 0 && e.ret.monthly + p.postIncome >= p.retireNeed && e.ratio >= 0.5,
-      t4: (e) => e.need <= 0 && e.ratioHome >= 1, // 집의 미래가치만으로 (저축 제외)
-      t5: (e) => e.need > 0 && e.payTotal <= p.payHigh && e.ratioRecon >= 2,
-      xa: (e) => e.recon && e.need > 0 && e.plus === 0 && e.payTotal <= p.payMax && e.ratioRecon >= 1.3,
-      xb: (e) => e.leftover >= 1 * EOK && e.ratioCash >= 1,
-    };
-    const valueOf = { t1: (e) => e.ratio, t2: (e) => e.ratioRecon, t3: (e) => e.ratio, t4: (e) => e.ratioHome, t5: (e) => e.ratioRecon, xa: (e) => e.ratioRecon, xb: (e) => e.ratioCash };
-    const score = (id, e) => {
-      const v = valueOf[id](e);
+    ok.forEach((e) => { e.pRetireNeed = p.retireNeed; });
+    const base = (r, e) => (LOAN_OK[r.loan] || LOAN_OK.any)(e) && (r.pay == null || e.payTotal <= r.pay)
+      && (!r.onlyOld || e.recon) && (!r.leftoverMin || e.leftover >= r.leftoverMin);
+    const pass = (r, e) => base(r, e) && valueFor(r, e) * 100 >= r.minPct && (!r.postIncome || retFor(r, e).monthly + p.postIncome >= p.retireNeed);
+    const score = (r, e) => {
+      const v = valueFor(r, e);
       const future = clamp(lerp(v, 0.5, 20, 3, 100), 0, 100);
-      const comfort = e.need > 0 ? clamp(lerp(e.payTotal / p.pay, 0.5, 100, id === 't5' ? 3.4 : 1.6, 30), 0, 100) : 80;
+      const hiPay = r.pay != null && r.pay > p.payMax * 2;
+      const comfort = e.need > 0 ? clamp(lerp(e.payTotal / p.pay, 0.5, 100, hiPay ? 3.4 : 1.6, 30), 0, 100) : 80;
       const liquidity = clamp(lerp(e.c.count, 1, 30, 15, 100), 0, 100);
       const thin = e.c.count < 3 ? (e.c.count <= 1 ? 0.85 : 0.93) : 1;
       return Math.round((future * 0.45 + e.loc.score * 0.35 + comfort * 0.1 + liquidity * 0.1) * thin);
     };
     const out = {};
     for (const t of TIERS) {
-      const list = ok.filter(pick[t.id]).map((e) => ({ e, score: score(t.id, e), value: valueOf[t.id](e) }));
+      const r = R[t.id];
+      const list = ok.filter((e) => pass(r, e)).map((e) => ({ e, score: score(r, e), value: valueFor(r, e) }));
       list.sort((a, b) => b.score - a.score || b.value - a.value);
       out[t.id] = list;
     }
-    // 비어 있는 순위: 조건 중 노후 기준만 빼면 가장 가까운 단지 (얼마나 모자라는지 보여 주기)
-    const relaxed = {
-      t1: (e) => e.need > 0 && e.plus === 0 && e.payTotal <= p.payMax, t2: (e) => e.plus > 0 && e.payTotal <= payLimit2,
-      t3: (e) => e.need <= 0, t4: (e) => e.need <= 0, t5: (e) => e.need > 0 && e.payTotal <= p.payHigh,
-      xa: (e) => e.recon && e.need > 0 && e.plus === 0 && e.payTotal <= p.payMax, xb: (e) => e.leftover >= 1 * EOK,
-    };
+    // 비어 있는 순위: 노후 기준만 빼면 가장 가까운 단지 (얼마나 모자라는지 보여 주기)
     const nearest = {};
     for (const t of TIERS) {
       if (out[t.id].length) continue;
+      const r = R[t.id];
       let best = null;
-      for (const e of ok) if (relaxed[t.id](e) && (!best || valueOf[t.id](e) > valueOf[t.id](best))) best = e;
-      nearest[t.id] = best ? { name: best.c.name, regionId: best.c.regionId, price: best.c.price, value: valueOf[t.id](best), monthly: (t.id === 'xb' ? best.retCash : t.id === 't4' ? best.retHome : ['t2', 't5', 'xa'].includes(t.id) ? best.retRecon : best.ret).monthly } : null;
+      for (const e of ok) if (base(r, e) && (!best || valueFor(r, e) > valueFor(r, best))) best = e;
+      nearest[t.id] = best ? { name: best.c.name, regionId: best.c.regionId, price: best.c.price, value: valueFor(r, best), monthly: retFor(r, best).monthly } : null;
     }
-    // 5순위는 1~4순위 최고 미래가치보다 30% 이상 높아야 한다
+    // vsBest: 1~4순위 최고 미래가치보다 그 배수 이상 (기본 5순위 1.3배)
     const best14 = Math.max(0, ...['t1', 't2', 't3', 't4'].flatMap((id) => out[id].slice(0, 5).map((x) => x.value)));
-    out.t5 = out.t5.filter((x) => x.value >= best14 * 1.3);
-    return { tiers: TIERS.map((t) => ({ ...t, items: out[t.id], nearest: nearest[t.id] || null })), considered: evals.length, kept: ok.length, best14 };
+    for (const t of TIERS) if (R[t.id].vsBest) out[t.id] = out[t.id].filter((x) => x.value >= best14 * R[t.id].vsBest);
+    return { tiers: TIERS.map((t) => ({ ...t, rule: R[t.id], items: out[t.id], nearest: nearest[t.id] || null })), considered: evals.length, kept: ok.length, best14 };
   }
 
   // 한 단지를 여러 순위에 넣지 않도록: 위 순위에 이미 뽑힌 단지는 아래에서 빼고 상위 n개
@@ -395,5 +422,5 @@
     return out;
   }
 
-  return { DEFAULTS, TIERS, funds, bankLimit, dongIndex, rebuild, reconAssume, normStage, redevIndex, matchProject, redevChance, oldRegisteredByGu, growth, location, retirement, balanceAfter, evaluate, classify, topN, cautions };
+  return { DEFAULTS, TIERS, defaultRules, rulesFor, retFor, funds, bankLimit, dongIndex, rebuild, reconAssume, normStage, redevIndex, matchProject, redevChance, oldRegisteredByGu, growth, location, retirement, balanceAfter, evaluate, classify, topN, cautions };
 });
