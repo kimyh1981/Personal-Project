@@ -165,9 +165,11 @@
   }
 
   // ── 계산·표시 ───────────────────────────────────────────────────────
-  let busy = false;
+  let busy = false, pending = null;
   async function run(withEnrich = true) {
-    if (busy) return; busy = true;
+    // 계산 중에 조건이 또 바뀌면 끝난 뒤 최신 조건으로 한 번 더 계산한다
+    if (busy) { pending = pending || withEnrich; return; }
+    busy = true;
     const status = (t) => { $('myStatus').innerHTML = t; };
     try {
       if (!hasProfile()) { renderEmpty(); return; }
@@ -195,9 +197,13 @@
       }
       const tiers = T.topN(res, 5);
       render(f, res, tiers, enriched);
+      renderRules(res);
     } catch (err) {
       status(`<p>${esc(err.message)}</p>`);
-    } finally { busy = false; }
+    } finally {
+      busy = false;
+      if (pending !== null) { const w = pending; pending = null; run(w); }
+    }
   }
 
   function renderEmpty() {
@@ -205,7 +211,7 @@
     $('myStatus').innerHTML = `<h3>내 기준이 아직 없습니다</h3>
       <p class="muted">이 기기(또는 설치된 앱)에는 조건이 저장돼 있지 않습니다. 받으신 <b>개인 설정 링크</b>를 아래에 붙여넣으면 한 번에 채워집니다. 또는 아래 '내 기준'을 직접 채우세요.</p>
       ${setupPasteHtml()}`;
-    $('myTiers').innerHTML = ''; $('tierNav').innerHTML = '';
+    $('myTiers').innerHTML = ''; $('tierNav').innerHTML = ''; $('tierRules').hidden = true;
     $('myProfileCard').open = true;
   }
 
@@ -314,12 +320,73 @@
     delete all[cid]; profile.reconOverrides = all; save(KEY, profile); run(false);
   });
 
+  // ── 나의 순위 조건: 메모(내가 적은 문장)와 실제 계산에 쓰는 조건 ─────────────
+  const LOAN_LABEL = { none: '대출 없이', bank: '은행 대출만', plus: '은행 + 추가 자금', need: '대출 필요 (방식 무관)', any: '상관없음' };
+  function renderRules(res) {
+    const R = T.rulesFor(profile);
+    const box = $('tierRules');
+    box.hidden = false;
+    box.innerHTML = `<h3>나의 순위 조건</h3>
+      <p class="muted">왼쪽 순위마다 내가 정한 조건을 적어 두고, 아래 칸으로 실제 계산 조건을 바꿉니다. 바꾸면 서울 전체 후보를 다시 평가하고, 새로 올라온 후보는 입지를 다시 확인합니다. 바꾼 순위는 주황색으로 표시됩니다.</p>
+      ${T.TIERS.map((t) => {
+        const r = R[t.id], n = (res.tiers.find((x) => x.id === t.id) || { items: [] }).items.length;
+        return `<div class="rule-row" data-rule="${t.id}">
+          <span class="rule-rank${r.custom ? ' custom' : ''}">${esc(t.rank)}</span>
+          <div class="rule-body">
+            <textarea data-rk="comment" rows="2" placeholder="${esc(t.title)}">${esc(r.comment)}</textarea>
+            <div class="rule-ctl">
+              <label>대출<select data-rk="loan">${Object.entries(LOAN_LABEL).map(([k, v]) => `<option value="${k}"${r.loan === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+              <label>월 상환 한도 (만원)<input type="number" step="10" min="0" data-rk="pay" value="${r.pay == null ? '' : Math.round(r.pay / MAN)}" placeholder="제한 없음"></label>
+              <label>노후 목표 (%)<input type="number" step="10" min="0" max="1000" data-rk="minPct" value="${r.minPct}"></label>
+              <span class="chk"><input type="checkbox" data-rk="recon"${r.recon ? ' checked' : ''} id="rc-${t.id}"><label for="rc-${t.id}" style="display:inline;color:inherit;font-size:13px">재건축 기대 반영</label></span>
+              ${r.custom ? '<button type="button" class="reset" data-rule-reset>기본값</button>' : ''}
+            </div>
+            <span class="rule-count">이번 주 조건에 맞는 곳 ${n.toLocaleString()}곳</span>
+          </div>
+        </div>`;
+      }).join('')}`;
+  }
+  // 메모 칸은 글 길이에 맞춰 높이를 늘린다
+  const grow = (ta) => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 2 + 'px'; };
+  $('tierRules').addEventListener('input', (e) => { if (e.target.matches('textarea')) grow(e.target); });
+  new MutationObserver(() => $('tierRules').querySelectorAll('textarea').forEach(grow)).observe($('tierRules'), { childList: true });
+  // 값 검증: 범위 밖은 보정 (정밀한 계산이 깨지지 않게)
+  function ruleValue(k, el) {
+    if (k === 'comment') return el.value.slice(0, 500);
+    if (k === 'loan') return LOAN_LABEL[el.value] ? el.value : undefined;
+    if (k === 'recon') return el.checked;
+    const v = el.value.trim();
+    if (v === '') return k === 'pay' ? null : undefined;
+    const n = Number(v);
+    if (!isFinite(n)) return undefined;
+    if (k === 'pay') return Math.max(0, Math.min(1e4, n)) * MAN; // 월 1억원 이하
+    if (k === 'minPct') return Math.max(0, Math.min(1000, n));
+    return undefined;
+  }
+  $('tierRules').addEventListener('change', (e) => {
+    const el = e.target.closest('[data-rk]'); if (!el) return;
+    const id = el.closest('[data-rule]').dataset.rule, k = el.dataset.rk;
+    const all = { ...(profile.tierRules || {}) }, o = { ...(all[id] || {}) };
+    const v = ruleValue(k, el);
+    if (v === undefined) delete o[k]; else o[k] = v;
+    all[id] = o; profile.tierRules = all; save(KEY, profile);
+    if (k === 'comment') return; // 메모는 계산에 쓰지 않는다
+    run(true); // 조건이 바뀌면 전체 재평가 + 새 후보 입지 확인
+  });
+  $('tierRules').addEventListener('click', (e) => {
+    if (!e.target.closest('[data-rule-reset]')) return;
+    const id = e.target.closest('[data-rule]').dataset.rule;
+    const all = { ...(profile.tierRules || {}) }, keep = all[id] && all[id].comment ? { comment: all[id].comment } : null;
+    if (keep) all[id] = keep; else delete all[id];
+    profile.tierRules = all; save(KEY, profile); run(true);
+  });
+
   function card(t, x, k, prevWeek) {
     const e = x.e, c = e.c, p = profile, reg = E.region(c.regionId);
     const age = c.builtYear ? new Date().getFullYear() - c.builtYear : null;
-    const useRecon = ['t2', 't5', 'xa'].includes(t.id);
+    const useRecon = !!t.rule.recon;
     const v60 = useRecon ? e.v60r : e.v60;
-    const ret = t.id === 'xb' ? e.retCash : t.id === 't4' ? e.retHome : useRecon ? e.retRecon : e.ret;
+    const ret = T.retFor(t.rule, e);
     const ratio = x.value;
     const cautions = T.cautions(e, p);
     const map = `https://map.kakao.com/?q=${encodeURIComponent(reg.name + ' ' + c.name)}`;
@@ -341,13 +408,13 @@
         ${useRecon && e.rebuild ? `<tr><td>재건축 뒤 (같은 동 신축 ${e.rebuild.peers}곳 ㎡당가 기준)</td><td class="n">지금 신축이면 ${won(e.rebuild.nowNew)} (현재가 대비 ${e.rebuild.premium >= 0 ? '+' : ''}${Math.round(e.rebuild.premium * 100)}%) · 분담금 −${won(e.rebuild.share)} · 성사 가능성 ${Math.round(e.rebuild.chance * 100)}% 반영</td></tr>
         <tr><td>${p.targetAge}세 재건축 뒤 예상 범위 (±15%)</td><td class="n">${won(e.rebuild.low)} ~ ${won(e.rebuild.high)}</td></tr>` : ''}
         <tr><td>${p.targetAge}세 예상 시세${e.debt60 > 0 ? ' → 대출 갚고 남는 돈' : ''}</td><td class="n">${won(v60)}${e.debt60 > 0 ? ` → ${won(v60 - e.debt60)}` : ''}</td></tr>
-        <tr><td>노후 월소득 (현재 가치, ${esc(ret.method)}${t.id === 'xb' ? ' + 남는 돈 운용' : ''}${t.id === 't4' ? ', 저축 제외' : ret.extraReal > 0 ? ' + 저축' : ''})</td><td class="n"><b>${manw(ret.monthly)}</b> · 목표의 ${Math.round(ratio * 100)}%</td></tr>
+        <tr><td>노후 월소득 (현재 가치, ${esc(ret.method)}${t.rule.cash ? ' + 남는 돈 운용' : ''}${t.rule.homeOnly ? ', 저축 제외' : ret.extraReal > 0 ? ' + 저축' : ''})</td><td class="n"><b>${manw(ret.monthly)}</b> · 목표의 ${Math.round(ratio * 100)}%</td></tr>
         <tr><td>입지 점수 ${e.loc.estimated ? '(추정)' : ''}</td><td class="n">${e.loc.score}점${e.loc.commute != null ? ` · 업무지구 약 ${e.loc.commute}분` : ''}${c.subwayMin != null ? ` · ${esc(c.stationName || '역')} 도보 ${c.subwayMin}분` : ''}</td></tr>
         ${c.infra ? `<tr><td>상권·생활</td><td class="n">대형마트 ${c.infra.mart}곳(1.5km) · 병원 ${c.infra.hospital}곳(1km)${c.infra.school != null ? ` · 초등학교 도보 ${c.infra.school}분` : ''}</td></tr>` : ''}
       </tbody></table></div>
       ${c.redev ? redevBlock(c, e, useRecon) : ''}
       ${cautions.length ? `<ul class="cons">${cautions.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}
-      <div class="row"><a class="ghost btn" href="${map}" target="_blank" rel="noopener">지도에서 보기</a></div>
+      <div class="row"><a class="map-btn" href="${map}" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.2c-4 0-7.2 3.1-7.2 7 0 5.2 7.2 12.6 7.2 12.6s7.2-7.4 7.2-12.6c0-3.9-3.2-7-7.2-7z" fill="#191919"/><circle cx="12" cy="9.3" r="2.8" fill="#fee500"/></svg>카카오맵에서 보기</a></div>
     </div>`;
   }
 

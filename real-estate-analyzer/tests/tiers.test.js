@@ -152,6 +152,29 @@ test('재건축 가정 우선순위: 직접 입력 > 정비사업 단계·주변
   assert.equal(ov.years, 4); assert.equal(ov.chance, 0.37); assert.equal(ov.source, '직접 입력');
 });
 
+test('순위 규칙: 기본값은 요청한 정의, 바꾼 항목만 덮어쓰고 추천이 그 조건으로 바뀐다', () => {
+  const p = profile();
+  const d = T.rulesFor(p);
+  assert.equal(d.t1.loan, 'bank'); assert.equal(d.t1.pay, p.payMax); assert.equal(d.t1.minPct, 100);
+  assert.equal(d.t4.homeOnly, true); assert.equal(d.t5.vsBest, 1.3); assert.equal(d.t1.custom, false);
+  const f = T.funds(p);
+  const list = [cand({ name: '12억', price: 12 * EOK }), cand({ name: '13억', price: 13 * EOK }), cand({ name: '7억', price: 7 * EOK })].map((c) => T.evaluate(c, p, reg, f));
+  const names = (res, id) => res.tiers.find((t) => t.id === id).items.map((x) => x.e.c.name);
+  const base = T.classify(list, p);
+  assert.ok(names(base, 't1').includes('12억'));
+  // 1순위 월 상환 한도를 아주 낮추면 대출이 필요한 곳이 빠진다
+  const low = T.classify(list, { ...p, tierRules: { t1: { pay: 50 * MAN, comment: '메모' } } });
+  assert.deepEqual(names(low, 't1'), []);
+  assert.equal(T.rulesFor({ ...p, tierRules: { t1: { pay: 50 * MAN, comment: '메모' } } }).t1.comment, '메모');
+  // 1순위를 '대출 없이'로 바꾸면 현금으로 사는 곳이 들어온다
+  const none = T.classify(list, { ...p, tierRules: { t1: { loan: 'none', minPct: 0 } } });
+  assert.deepEqual(names(none, 't1'), ['7억']);
+  // 메모만 바꾸면 결과는 그대로
+  const memo = T.classify(list, { ...p, tierRules: { t1: { comment: '아무 글' } } });
+  assert.deepEqual(names(memo, 't1'), names(base, 't1'));
+  assert.equal(T.rulesFor({ ...p, tierRules: { t1: { comment: '아무 글' } } }).t1.custom, false);
+});
+
 test('노후 월소득: 집을 줄여 옮긴 차액 인출과 주택연금 중 큰 값 (현재 가치)', () => {
   const p = profile();
   const r = T.retirement(20 * EOK, 0, p, 15);

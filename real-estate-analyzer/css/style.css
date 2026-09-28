@@ -787,3 +787,31 @@ a.btn { display: inline-flex; align-items: center; padding: 9px 14px; border-rad
 .setup-paste textarea { width: 100% !important; max-width: none !important; justify-self: stretch; box-sizing: border-box; }
 
 .my-page .card tr:last-child { border-bottom: 0; }
+/* 아이폰 설정 앱 같은 상단 막대 */
+.ios-nav { position: sticky; top: 0; z-index: 20; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; min-height: 52px; padding: env(safe-area-inset-top) 8px 0; background: color-mix(in srgb, var(--bg) 82%, transparent); -webkit-backdrop-filter: saturate(180%) blur(18px); backdrop-filter: saturate(180%) blur(18px); border-bottom: 0.5px solid var(--sep, rgba(0,0,0,.12)); }
+.ios-back { justify-self: start; display: inline-flex; align-items: center; min-height: 38px; padding: 0 18px; border-radius: 999px; background: #007aff; color: #fff; font-size: 16px; font-weight: 600; text-decoration: none; box-shadow: 0 2px 8px rgba(0,122,255,.28); -webkit-tap-highlight-color: transparent; }
+.ios-back:active { opacity: .7; }
+.ios-title { font-size: 17px; font-weight: 700; color: var(--label); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme=light]) .ios-back { background: #0a84ff; } }
+.my-page .tier-nav { top: 52px; }
+.my-page .tier { scroll-margin-top: 108px; }
+
+/* 카카오맵 버튼 (카카오맵 느낌의 노란 지도 핀) */
+a.map-btn { display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px 9px 10px; border-radius: 999px; background: #fee500; color: #191919; font-weight: 600; text-decoration: none; }
+a.map-btn svg { width: 22px; height: 22px; flex: none; }
+a.map-btn:active { opacity: .7; }
+
+/* 나의 순위 조건 */
+.rule-row { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; padding: 12px 0; border-bottom: 0.5px solid var(--sep, rgba(0,0,0,.1)); }
+.rule-row:last-child { border-bottom: 0; }
+.rule-rank { align-self: start; padding: 4px 10px; border-radius: 999px; background: var(--tint); color: #fff; font-size: 13px; font-weight: 700; white-space: nowrap; }
+.rule-rank.custom { background: #ff9500; }
+.rule-body { display: grid; gap: 8px; min-width: 0; }
+.rule-body textarea { width: 100%; box-sizing: border-box; min-height: 44px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--sep, rgba(0,0,0,.12)); background: var(--group-2); color: var(--label); font: 15px/1.45 var(--font); resize: vertical; }
+.rule-ctl { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+.rule-ctl label { display: grid; gap: 3px; font-size: 12px; color: var(--label-3); flex: 1 1 96px; }
+.rule-ctl select, .rule-ctl input[type=number] { width: 100%; box-sizing: border-box; padding: 7px 8px; border-radius: 9px; border: 1px solid var(--sep, rgba(0,0,0,.12)); background: var(--group); color: var(--label); font: 14px var(--font); }
+.rule-ctl .chk { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; font-size: 13px; color: var(--label-2-solid); }
+.rule-ctl .reset { flex: 0 0 auto; border: 0; background: none; color: var(--tint); font: 13px var(--font); padding: 8px 4px; }
+.rule-count { font-size: 12px; color: var(--label-3); }
+.rule-body textarea { overflow: hidden; }
