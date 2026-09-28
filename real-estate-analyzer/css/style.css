@@ -776,3 +776,6 @@ a.btn { display: inline-flex; align-items: center; padding: 9px 14px; border-rad
 .setup-paste textarea { width: 100%; min-height: 72px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--sep, rgba(0,0,0,.12)); background: var(--group-2); font: 14px var(--font); color: var(--label); resize: vertical; }
 .setup-more { margin-top: 10px; }
 .setup-more summary { cursor: pointer; color: var(--tint); }
+.won-hint { font-weight: 600; color: var(--tint); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.won-hint::before { content: ' · '; color: var(--label-3); font-weight: 400; }
+.won-hint:empty { display: none; }
