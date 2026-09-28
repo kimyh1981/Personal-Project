@@ -753,14 +753,14 @@ input[type=checkbox]:checked::before { transform: translateX(20px); }
 #myProfileCard[open] > summary::after { content: "닫기"; }
 .my-form { margin-top: 12px; padding: 0; background: none; }
 a.btn { display: inline-flex; align-items: center; padding: 9px 14px; border-radius: 999px; text-decoration: none; }
-.my-page .reco-card .tbl-wrap { overflow: visible; }
-.my-page .reco-card table, .my-page .reco-card tbody { display: block; width: 100%; }
-.my-page .reco-card tr { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 12px; }
-.my-page .reco-card td { display: block; border: 0 !important; padding: 0 !important; background: none; box-shadow: none; }
-.my-page .reco-card td::before, .my-page .reco-card td::after, .my-page .reco-card tr::after { display: none !important; }
-.my-page .reco-card tr { padding: 10px var(--pad); border-bottom: 1px solid var(--sep, rgba(0,0,0,.08)); }
-.my-page .reco-card td:first-child { flex: 1 1 9em; color: var(--label-2-solid); }
-.my-page .reco-card td.n { flex: 1 1 12em; text-align: right; white-space: normal; }
+.my-page .card .tbl-wrap { overflow: visible; }
+.my-page .card table, .my-page .card tbody { display: block; width: 100%; }
+.my-page .card tr { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 12px; }
+.my-page .card td { display: block; border: 0 !important; padding: 0 !important; background: none; box-shadow: none; }
+.my-page .card td::before, .my-page .card td::after, .my-page .card tr::after { display: none !important; }
+.my-page .card tr { padding: 10px var(--pad); border-bottom: 1px solid var(--sep, rgba(0,0,0,.08)); }
+.my-page .card td:first-child { flex: 1 1 9em; color: var(--label-2-solid); }
+.my-page .card td.n { flex: 1 1 12em; text-align: right; white-space: normal; }
 .my-page .reco-title h3 .unit { white-space: nowrap; }
 .my-form .check-row { display: flex; align-items: center; gap: 10px; }
 .my-form .check-row input { width: auto; flex: none; }
@@ -785,3 +785,5 @@ a.btn { display: inline-flex; align-items: center; padding: 9px 14px; border-rad
 .setup-paste label.f::after { display: none; }
 .setup-paste textarea { grid-column: 1 / -1; text-align: left; }
 .setup-paste textarea { width: 100% !important; max-width: none !important; justify-self: stretch; box-sizing: border-box; }
+
+.my-page .card tr:last-child { border-bottom: 0; }
