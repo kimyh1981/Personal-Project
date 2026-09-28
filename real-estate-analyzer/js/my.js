@@ -37,13 +37,14 @@
   // ── 입력 폼 (화면은 만원·%, 저장은 원·비율) ────────────────────────────
   const FIELDS = [
     ['cgtReserve', 'won'], ['cashReserve', 'won'], ['pay', 'won'], ['payMax', 'won'], ['payPlusRatio', 'num'], ['payHigh', 'won'],
-    ['annualIncome', 'won'], ['loanRate', 'pct'], ['plusRate', 'pct'], ['name', 'text'], ['age', 'num'], ['targetAge', 'num'],
+    ['annualIncome', 'won'], ['loanTerm', 'num'], ['loanRate', 'pct'], ['plusRate', 'pct'], ['name', 'text'], ['age', 'num'], ['targetAge', 'num'],
     ['retireNeed', 'won'], ['postIncome', 'won'], ['downsizeHome', 'won'], ['growthAdjust', 'pct'], ['minArea', 'num'],
   ];
   const toView = (v, t) => (t === 'won' ? (v ? Math.round(v / MAN) : '') : t === 'pct' ? +(v * 100).toFixed(2) : v ?? '');
   const fromView = (s, t) => (t === 'text' ? s : t === 'won' ? (Number(s) || 0) * MAN : t === 'pct' ? (Number(s) || 0) / 100 : Number(s) || 0);
   function renderForm() {
     for (const [k, t] of FIELDS) { const el = $('p_' + k); if (el) el.value = toView(profile[k], t); }
+    $('p_saveRest').checked = profile.saveRest !== false;
     const homes = (profile.homes || []).length ? profile.homes : [{ name: '', value: 0, loan: 0, loanRate: 0.03, jeonse: 0 }];
     $('homesWrap').innerHTML = homes.map((h, i) => `
       <label class="f">주택 ${i + 1} 이름<input data-h="${i}" data-k="name" type="text" value="${esc(h.name)}"></label>
@@ -63,6 +64,7 @@
       const f = FIELDS.find(([k]) => 'p_' + k === el.id);
       if (f) profile[f[0]] = fromView(el.value, f[1]);
       if (f && f[0] === 'cgtReserve') profile.cgtConfirmed = true; // 0원도 직접 확인한 값
+      if (el.id === 'p_saveRest') profile.saveRest = el.checked;
     }
     save(KEY, profile);
     run(false);
@@ -245,7 +247,7 @@
     const age = c.builtYear ? new Date().getFullYear() - c.builtYear : null;
     const useRecon = ['t2', 't5', 'xa'].includes(t.id);
     const v60 = useRecon ? e.v60r : e.v60;
-    const ret = t.id === 'xb' ? e.retCash : useRecon ? e.retRecon : e.ret;
+    const ret = t.id === 'xb' ? e.retCash : t.id === 't4' ? e.retHome : useRecon ? e.retRecon : e.ret;
     const ratio = x.value;
     const cautions = T.cautions(e, p);
     const map = `https://map.kakao.com/?q=${encodeURIComponent(reg.name + ' ' + c.name)}`;
@@ -260,10 +262,12 @@
         <tr><td>실거래 중위</td><td class="n">${won(c.price)}${c.jeonse ? ` · 전세 ${won(c.jeonse)}` : ''}</td></tr>
         <tr><td>취득 비용 (세금·중개·등기)</td><td class="n">${won(e.costs)}</td></tr>
         ${e.need > 0 ? `<tr><td>은행 대출 / 추가 자금</td><td class="n">${won(e.loan)}${e.plus ? ` / ${won(e.plus)}` : ''}</td></tr>
-        <tr><td>월 상환 (${e.years}년, 60세 완납)</td><td class="n">${manw(e.payTotal)}</td></tr>` : `<tr><td>대출 없이 남는 돈</td><td class="n">${won(e.leftover)}</td></tr>`}
+        <tr><td>월 상환 (${e.term}년 만기)</td><td class="n">${manw(e.payTotal)}</td></tr>
+        ${e.debt60 > 0 ? `<tr><td>${p.targetAge}세에 남는 대출 (집 팔아 상환)</td><td class="n">${won(e.debt60)}</td></tr>` : ''}` : `<tr><td>대출 없이 남는 돈</td><td class="n">${won(e.leftover)}</td></tr>`}
+        ${e.saveMonthly > 0 ? `<tr><td>상환 여유분 저축 (월 ${manw(e.saveMonthly)}, 연 ${pct(p.cashReturn, 1)})</td><td class="n">${p.targetAge}세 ${won(e.save60)}</td></tr>` : ''}
         <tr><td>예상 연 상승률 (${esc(e.growth.basis)}${useRecon && e.recon ? ' + 재건축' : ''})</td><td class="n">${pct(useRecon ? e.gRecon : e.growth.g)}</td></tr>
-        <tr><td>${p.targetAge}세 예상 시세</td><td class="n">${won(v60)}</td></tr>
-        <tr><td>노후 월소득 (현재 가치, ${esc(ret.method)}${t.id === 'xb' ? ' + 남는 돈 운용' : ''})</td><td class="n"><b>${manw(ret.monthly)}</b> · 목표의 ${Math.round(ratio * 100)}%</td></tr>
+        <tr><td>${p.targetAge}세 예상 시세${e.debt60 > 0 ? ' → 대출 갚고 남는 돈' : ''}</td><td class="n">${won(v60)}${e.debt60 > 0 ? ` → ${won(v60 - e.debt60)}` : ''}</td></tr>
+        <tr><td>노후 월소득 (현재 가치, ${esc(ret.method)}${t.id === 'xb' ? ' + 남는 돈 운용' : ''}${t.id === 't4' ? ', 저축 제외' : ret.extraReal > 0 ? ' + 저축' : ''})</td><td class="n"><b>${manw(ret.monthly)}</b> · 목표의 ${Math.round(ratio * 100)}%</td></tr>
         <tr><td>입지 점수 ${e.loc.estimated ? '(추정)' : ''}</td><td class="n">${e.loc.score}점${e.loc.commute != null ? ` · 업무지구 약 ${e.loc.commute}분` : ''}${c.subwayMin != null ? ` · ${esc(c.stationName || '역')} 도보 ${c.subwayMin}분` : ''}</td></tr>
         ${c.infra ? `<tr><td>상권·생활</td><td class="n">대형마트 ${c.infra.mart}곳(1.5km) · 병원 ${c.infra.hospital}곳(1km)${c.infra.school != null ? ` · 초등학교 도보 ${c.infra.school}분` : ''}</td></tr>` : ''}
       </tbody></table></div>
@@ -274,7 +278,9 @@
 
   $('myMethod').innerHTML = [
     '두 채를 모두 판 순자산에서 매도 중개보수·양도세 예상·비상금을 빼고, 서울 아파트 취득 비용(취득세·중개보수·등기)을 더해 모자라는 돈을 계산합니다.',
-    '은행 대출은 서울(규제지역) 무주택 기준 LTV 40%, 주택가격별 한도(15억 이하 6억 · 25억 이하 4억 · 초과 2억), 연소득을 넣으면 스트레스 DSR까지 적용합니다. 60세에 다 갚는 기간으로 월 상환을 계산합니다.',
+    '은행 대출은 서울(규제지역) 무주택 기준 LTV 40%, 주택가격별 한도(15억 이하 6억 · 25억 이하 4억 · 초과 2억), 연소득을 넣으면 스트레스 DSR(대출 만기 기준)까지 적용합니다.',
+    '대출은 만기(기본 30년)로 매달 갚다가, 60세에 남은 대출은 집을 팔아 한 번에 갚고 후순위 지역의 작은 집으로 옮긴다고 봅니다. 노후 자금 = 60세 시세 − 남은 대출 − 옮겨 살 집 + 상환 여유분 저축.',
+    '상환 여유분 저축: 월 상환 기본 한도에서 실제 상환액을 뺀 나머지를 매달 연 3%로 모은다고 봅니다 (대출 없는 3·4순위는 기본 한도 전액). 내 기준에서 끌 수 있습니다.',
     '은행 한도를 넘는 돈은 추가 자금(가족 차입·개인 근저당 등)으로 보고 같은 기간 상환으로 계산합니다.',
     '미래 시세는 단지와 구의 과거 5년·10년 ㎡당 연평균 상승률을 섞은 뒤 보수적으로 1.5%p 낮추고, 연 5.5%를 넘지 않게 합니다. 30년 넘은 단지는 재건축 기대를 2순위·5순위·추가 A에서만 0.7%p 더합니다.',
     '노후 월소득은 60세 시세를 현재 가치로 바꾼 뒤, 집을 줄여 옮기고 차액을 연 4%로 쓰는 경우와 주택연금 중 큰 값입니다. 국민연금·퇴직연금은 넣지 않았습니다.',

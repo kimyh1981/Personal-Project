@@ -762,3 +762,5 @@ a.btn { display: inline-flex; align-items: center; padding: 9px 14px; border-rad
 .my-page .reco-card td:first-child { flex: 1 1 9em; color: var(--label-2-solid); }
 .my-page .reco-card td.n { flex: 1 1 12em; text-align: right; white-space: normal; }
 .my-page .reco-title h3 .unit { white-space: nowrap; }
+.my-form .check-row { display: flex; align-items: center; gap: 10px; }
+.my-form .check-row input { width: auto; flex: none; }

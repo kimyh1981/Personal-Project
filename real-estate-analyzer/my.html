@@ -37,13 +37,15 @@
           <label class="f">매도 양도세 예상 <span class="unit">만원</span><input id="p_cgtReserve" type="number" step="100"></label>
           <label class="f">남겨 둘 비상금 <span class="unit">만원</span><input id="p_cashReserve" type="number" step="100"></label>
         </fieldset>
-        <fieldset data-footer="1순위는 기본 한도, 최대 한도까지 허용. 2순위는 기본 한도의 비율까지. 5순위는 고소득 한도.">
+        <fieldset data-footer="1순위는 기본 한도, 최대 한도까지 허용. 2순위는 기본 한도의 비율까지. 5순위는 고소득 한도. 월 상환은 대출 만기 기준 원리금입니다.">
           <legend><span>상환 능력</span></legend>
           <label class="f">월 상환 기본 <span class="unit">만원</span><input id="p_pay" type="number" step="10"></label>
           <label class="f">월 상환 최대 <span class="unit">만원</span><input id="p_payMax" type="number" step="10"></label>
           <label class="f">2순위 상환 비율 <span class="unit">배</span><input id="p_payPlusRatio" type="number" step="0.1"></label>
           <label class="f">5순위 월 상환 <span class="unit">만원</span><input id="p_payHigh" type="number" step="50"></label>
           <label class="f">세전 연소득 <span class="unit">만원 · DSR 확인, 비우면 생략</span><input id="p_annualIncome" type="number" step="100"></label>
+          <label class="f">대출 만기 <span class="unit">년 · 60세에 남은 대출은 집을 팔아 상환</span><input id="p_loanTerm" type="number" step="5"></label>
+          <label class="f wide check-row"><input id="p_saveRest" type="checkbox"> 월 상환 여유분을 저축해 60세 노후 자금에 더하기</label>
           <label class="f">새 주담대 금리 <span class="unit">%</span><input id="p_loanRate" type="number" step="0.1"></label>
           <label class="f">추가 자금 금리 <span class="unit">%</span><input id="p_plusRate" type="number" step="0.1"></label>
         </fieldset>
