@@ -5,7 +5,7 @@ const T = require('../js/tiers.js');
 const MAN = 1e4, EOK = 1e8;
 // 가상의 조건 (실제 개인 값 아님)
 const profile = (over = {}) => ({
-  ...T.DEFAULTS,
+  ...T.DEFAULTS, saveRest: false,
   age: 45, targetAge: 60,
   homes: [{ name: 'A', value: 10 * EOK, loan: 4 * EOK, jeonse: 0 }, { name: 'B', value: 6 * EOK, loan: 1 * EOK, jeonse: 2 * EOK }],
   cashReserve: 0, cgtReserve: 0,
@@ -29,17 +29,30 @@ test('은행 한도: 서울 무주택 LTV 40%, 15억 이하 6억 한도, 연소�
   assert.ok(withIncome.dsrChecked && withIncome.amount < 4.8 * EOK);
 });
 
-test('평가: 모자라는 돈은 은행 한도까지 대출, 넘는 부분은 추가 자금, 60세 완납 상환', () => {
-  const p = profile();
+test('평가: 모자라는 돈은 은행 한도까지 대출, 넘는 부분은 추가 자금', () => {
+  const p = profile({ loanTerm: 15 });
   const f = T.funds(p);
   const e = T.evaluate(cand({ name: '12억', price: 12 * EOK }), p, reg, f);
   assert.ok(e.need > 0 && e.plus === 0);
-  assert.equal(e.years, 15);
+  assert.equal(e.term, 15);
+  assert.equal(Math.round(e.debt60), 0); // 15년 만기면 60세에 다 갚음
   assert.ok(e.payTotal > 250 * MAN && e.payTotal < 350 * MAN);
   const big = T.evaluate(cand({ name: '22억', price: 22 * EOK }), p, reg, f);
   assert.ok(big.plus > 0 && big.loan === 4 * EOK);
   const cheap = T.evaluate(cand({ name: '7억', price: 7 * EOK }), p, reg, f);
   assert.ok(cheap.need < 0 && cheap.leftover > 0 && cheap.payTotal === 0);
+});
+
+test('평가: 30년 만기면 월 상환이 줄고, 60세 남은 대출은 집을 팔아 갚은 뒤 노후 자금을 계산', () => {
+  const p15 = profile({ loanTerm: 15 }), p30 = profile({ loanTerm: 30 });
+  const c = cand({ name: '12억', price: 12 * EOK });
+  const a = T.evaluate(c, p15, reg, T.funds(p15)), b = T.evaluate(c, p30, reg, T.funds(p30));
+  assert.equal(b.term, 30);
+  assert.ok(b.payTotal < a.payTotal * 0.7);
+  const expected = T.balanceAfter(b.loan, p30.loanRate, 360, 180);
+  assert.ok(b.debt60 > 0 && Math.abs(b.debt60 - expected) < 1);
+  assert.ok(b.ret.monthly < a.ret.monthly); // 남은 대출만큼 노후 자금이 줄어든다
+  assert.ok(Math.abs(T.balanceAfter(1e8, 0.04, 360, 360)) < 1e-6);
 });
 
 test('미래가치: 과거 상승률을 보수적으로 깎고 상한을 둔다, 30년 넘으면 재건축 가산', () => {
@@ -71,6 +84,16 @@ test('순위: 조건별로 나누고, 입지가 나쁘면 빼고, 한 단지는 
   const top = T.topN(res, 5);
   const seen = top.flatMap((t) => t.items.map((x) => x.e.c.name));
   assert.equal(seen.length, new Set(seen).size);
+});
+
+test('상환 여유분 저축: 기본 한도 − 실제 상환을 매달 모아 60세 노후 자금에 더한다', () => {
+  const on = profile({ saveRest: true }), off = profile({ saveRest: false });
+  const c = cand({ name: '12억', price: 12 * EOK });
+  const a = T.evaluate(c, on, reg, T.funds(on)), b = T.evaluate(c, off, reg, T.funds(off));
+  assert.ok(Math.abs(a.saveMonthly - (on.pay - a.payTotal)) < 1);
+  assert.ok(a.save60 > a.saveMonthly * 180 && a.ret.monthly > b.ret.monthly);
+  const cash = T.evaluate(cand({ name: '7억', price: 7 * EOK }), on, reg, T.funds(on));
+  assert.equal(cash.saveMonthly, on.pay); // 대출이 없으면 기본 한도 전액 저축
 });
 
 test('노후 월소득: 집을 줄여 옮긴 차액 인출과 주택연금 중 큰 값 (현재 가치)', () => {

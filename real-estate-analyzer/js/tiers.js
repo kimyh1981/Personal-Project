@@ -28,6 +28,8 @@
     annualIncome: 0, // 세전 연소득 (DSR 확인용, 0이면 미확인)
     pay: 300 * MAN, payMax: 350 * MAN, payPlusRatio: 1.5, payHigh: 1000 * MAN,
     loanRate: 0.04, plusRate: 0.05, // 새 주담대 금리, 추가 자금(개인 차입 등) 금리
+    loanTerm: 30, // 대출 만기(년). 60세에 남은 대출은 집을 팔아 한 번에 갚고 후순위 지역으로 옮긴다
+    saveRest: true, // 월 상환 기본 한도에서 실제 상환을 뺀 나머지를 매달 저축해 60세 노후 자금에 더한다
     retireNeed: 350 * MAN, // 노후 월 생활비 (현재 돈 가치)
     postIncome: 300 * MAN, // 60세 이후 월 소득 (3순위 가정)
     inflation: 0.02, growthAdjust: -0.015, cashReturn: 0.03, withdraw: 0.04,
@@ -95,14 +97,24 @@
   }
 
   // 60세 시점 노후 월소득 (현재 돈 가치): 집을 줄여 옮기고 차액을 인출률로 쓰거나, 주택연금 중 큰 값
-  function retirement(value60, extra60, p, years) {
+  // debt60: 60세에 남은 대출. 집을 팔아 먼저 갚는다 (주택연금이면 연금 대상 가치에서 뺀다)
+  function retirement(value60, extra60, p, years, debt60 = 0) {
     const deflate = Math.pow(1 + p.inflation, years);
-    const homeReal = value60 / deflate, extraReal = (extra60 || 0) / deflate;
-    const downsize = Math.max(0, homeReal - p.downsizeHome) * p.withdraw / 12;
-    const pension = Math.min(homeReal, 17 * EOK) * 0.0022; // 60세 정액형, 공시가 12억(시세 약 17억) 상한 근사
+    const homeReal = value60 / deflate, extraReal = (extra60 || 0) / deflate, debtReal = debt60 / deflate;
+    const downsize = Math.max(0, homeReal - debtReal - p.downsizeHome) * p.withdraw / 12;
+    const pension = Math.max(0, Math.min(homeReal, 17 * EOK) - debtReal) * 0.0022; // 60세 정액형, 공시가 12억(시세 약 17억) 상한 근사
     const fromHome = Math.max(downsize, pension);
     const fromCash = extraReal * p.withdraw / 12;
-    return { monthly: fromHome + fromCash, fromHome, fromCash, method: downsize >= pension ? '집 줄여 이사 후 차액 운용' : '주택연금', homeReal, extraReal };
+    return { monthly: fromHome + fromCash, fromHome, fromCash, method: downsize >= pension ? '팔아서 대출 갚고 작은 집으로 이사, 차액 운용' : '주택연금', homeReal, extraReal, debtReal };
+  }
+  // 원리금균등 대출의 n개월 뒤 잔액
+  function balanceAfter(principal, rate, termMonths, paidMonths) {
+    if (principal <= 0) return 0;
+    if (paidMonths >= termMonths) return 0;
+    const i = rate / 12, m = E.pmt(principal, rate, termMonths);
+    if (!i) return principal - m * paidMonths;
+    const g = Math.pow(1 + i, paidMonths);
+    return Math.max(0, principal * g - m * (g - 1) / i);
   }
 
   /**
@@ -110,7 +122,7 @@
    */
   function evaluate(c, p, reg, f) {
     const years = Math.max(1, p.targetAge - p.age);
-    const term = years; // 60세까지 다 갚는 조건
+    const term = Math.max(years, p.loanTerm || years); // 만기가 60세보다 길면 남은 대출은 60세에 집을 팔아 갚는다
     const costs = E.closingCosts({ price: c.price, regionId: c.regionId, homesAfter: 1, temporaryTwo: false, areaOver85: c.area > 85, firstTime: false, publicPrice: c.price * 0.69, vat: true, propertyType: '아파트' }).total;
     const need = c.price + costs - f.cash; // 모자라는 돈 (음수면 남음)
     const bank = bankLimit(c.price, c.regionId, p, term);
@@ -125,14 +137,21 @@
     const leftover = Math.max(0, -need);
     const v60 = c.price * Math.pow(1 + gr.g, years);
     const v60r = c.price * Math.pow(1 + gRecon, years);
+    // 월 상환 여유분 저축: (기본 한도 − 실제 상환)을 매달 모아 60세에 쓴다
+    const saveMonthly = p.saveRest ? Math.max(0, p.pay - payTotal) : 0;
+    const mi = p.cashReturn / 12, nm = years * 12;
+    const save60 = saveMonthly > 0 ? (mi ? saveMonthly * (Math.pow(1 + mi, nm) - 1) / mi : saveMonthly * nm) : 0;
     const cash60 = leftover * Math.pow(1 + p.cashReturn, years);
-    const ret = retirement(v60, 0, p, years);
-    const retRecon = retirement(v60r, 0, p, years);
-    const retCash = retirement(v60, cash60, p, years);
+    const debt60 = balanceAfter(loan, p.loanRate, term * 12, years * 12) + balanceAfter(plus, p.plusRate, term * 12, years * 12);
+    const ret = retirement(v60, save60, p, years, debt60);
+    const retRecon = retirement(v60r, save60, p, years, debt60);
+    const retCash = retirement(v60, cash60 + save60, p, years, debt60);
+    const retHome = retirement(v60, 0, p, years, debt60); // 저축 없이 집만으로 (4순위)
     const loc = location(c);
     return {
-      c, years, costs, need, bank, loan, plus, payBank, payPlus, payTotal, growth: gr, recon, gRecon, leftover,
+      c, years, term, debt60, saveMonthly, save60, costs, need, bank, loan, plus, payBank, payPlus, payTotal, growth: gr, recon, gRecon, leftover,
       v60, v60r, cash60, ret, retRecon, retCash, loc,
+      retHome, ratioHome: retHome.monthly / p.retireNeed,
       ratio: ret.monthly / p.retireNeed, ratioRecon: retRecon.monthly / p.retireNeed, ratioCash: retCash.monthly / p.retireNeed,
     };
   }
@@ -156,12 +175,12 @@
       t1: (e) => e.need > 0 && e.plus === 0 && e.payTotal <= p.payMax && e.ratio >= 1,
       t2: (e) => e.plus > 0 && e.payTotal <= payLimit2 && e.ratioRecon >= 1.3,
       t3: (e) => e.need <= 0 && e.ret.monthly + p.postIncome >= p.retireNeed && e.ratio >= 0.5,
-      t4: (e) => e.need <= 0 && e.ratio >= 1,
+      t4: (e) => e.need <= 0 && e.ratioHome >= 1, // 집의 미래가치만으로 (저축 제외)
       t5: (e) => e.need > 0 && e.payTotal <= p.payHigh && e.ratioRecon >= 2,
       xa: (e) => e.recon && e.need > 0 && e.plus === 0 && e.payTotal <= p.payMax && e.ratioRecon >= 1.3,
       xb: (e) => e.leftover >= 1 * EOK && e.ratioCash >= 1,
     };
-    const valueOf = { t1: (e) => e.ratio, t2: (e) => e.ratioRecon, t3: (e) => e.ratio, t4: (e) => e.ratio, t5: (e) => e.ratioRecon, xa: (e) => e.ratioRecon, xb: (e) => e.ratioCash };
+    const valueOf = { t1: (e) => e.ratio, t2: (e) => e.ratioRecon, t3: (e) => e.ratio, t4: (e) => e.ratioHome, t5: (e) => e.ratioRecon, xa: (e) => e.ratioRecon, xb: (e) => e.ratioCash };
     const score = (id, e) => {
       const v = valueOf[id](e);
       const future = clamp(lerp(v, 0.5, 20, 3, 100), 0, 100);
@@ -187,7 +206,7 @@
       if (out[t.id].length) continue;
       let best = null;
       for (const e of ok) if (relaxed[t.id](e) && (!best || valueOf[t.id](e) > valueOf[t.id](best))) best = e;
-      nearest[t.id] = best ? { name: best.c.name, regionId: best.c.regionId, price: best.c.price, value: valueOf[t.id](best), monthly: (t.id === 'xb' ? best.retCash : ['t2', 't5', 'xa'].includes(t.id) ? best.retRecon : best.ret).monthly } : null;
+      nearest[t.id] = best ? { name: best.c.name, regionId: best.c.regionId, price: best.c.price, value: valueOf[t.id](best), monthly: (t.id === 'xb' ? best.retCash : t.id === 't4' ? best.retHome : ['t2', 't5', 'xa'].includes(t.id) ? best.retRecon : best.ret).monthly } : null;
     }
     // 5순위는 1~4순위 최고 미래가치보다 30% 이상 높아야 한다
     const best14 = Math.max(0, ...['t1', 't2', 't3', 't4'].flatMap((id) => out[id].slice(0, 5).map((x) => x.value)));
@@ -215,11 +234,12 @@
     if (e.recon) out.push(`${e.c.builtYear}년 준공 — 재건축 시 이주·분담금 필요`);
     if (e.need > 0 && !e.bank.dsrChecked) out.push('연소득을 넣지 않아 DSR 한도는 확인하지 않음');
     if (e.payTotal > p.pay && e.payTotal <= p.payMax) out.push(`월 상환 ${Math.round(e.payTotal / MAN)}만원 (기본 ${Math.round(p.pay / MAN)}만원 초과, 최대 한도 이내)`);
+    if (e.debt60 > 0) out.push(`${p.targetAge}세에 남는 대출 약 ${Math.round(e.debt60 / MAN).toLocaleString()}만원은 집을 팔아 갚는 계획 (시세가 오르지 않으면 부담)`);
     if (e.plus > 0) out.push(`은행 대출 한도 밖 ${Math.round(e.plus / MAN).toLocaleString()}만원을 추가 자금(연 ${(p.plusRate * 100).toFixed(1)}%)으로 마련해야 함`);
     if (e.loc.estimated) out.push('입지는 구 중심 기준 추정');
     if (E.region(e.c.regionId).landPermit) out.push('토지거래허가구역: 허가 후 2년 실거주 필요 (전세 낀 매수 불가)');
     return out;
   }
 
-  return { DEFAULTS, TIERS, funds, bankLimit, growth, location, retirement, evaluate, classify, topN, cautions };
+  return { DEFAULTS, TIERS, funds, bankLimit, growth, location, retirement, balanceAfter, evaluate, classify, topN, cautions };
 });
