@@ -26,7 +26,7 @@ const live = require('./live-data.js');
   // 서울 정비사업 전체 목록: 정보몽땅은 CORS 헤더가 중복돼 브라우저가 직접 못 읽는다
   try {
     const rows = await Promise.race([live.cleanupAll(), new Promise((_, rej) => setTimeout(() => rej(new Error('시간 초과')), 90e3).unref())]);
-    const cols = ['자치구', '사업구분', '사업장명', '대표지번', '진행단계'];
+    const cols = ['자치구', '사업구분', '사업장명', '대표지번', '진행단계', 'cafe', 'rec'];
     const body = { fetchedAt: new Date().toISOString(), source: '서울시 정비사업 정보몽땅', cols, rows: rows.map((x) => cols.map((c) => x[c] || '')) };
     fs.writeFileSync(path.join(out, 'data', 'redev-seoul.json'), JSON.stringify(body));
     console.log(`서울 정비사업 스냅샷: ${rows.length}곳`);

@@ -764,3 +764,11 @@ a.btn { display: inline-flex; align-items: center; padding: 9px 14px; border-rad
 .my-page .reco-title h3 .unit { white-space: nowrap; }
 .my-form .check-row { display: flex; align-items: center; gap: 10px; }
 .my-form .check-row input { width: auto; flex: none; }
+.redev-box { margin: 10px var(--pad) 4px; padding: 12px 14px; border-radius: 16px; background: var(--group-2); display: grid; gap: 6px; font-size: 14px; }
+.redev-box p { margin: 0; }
+.redev-box .links a { color: var(--tint); }
+.redev-edit summary { cursor: pointer; color: var(--tint); }
+.redev-edit summary .muted { color: var(--label-3); font-size: 13px; }
+.redev-form { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; align-items: end; }
+.redev-form label { display: grid; gap: 4px; font-size: 13px; color: var(--label-2-solid); flex: 1 1 110px; }
+.redev-form input { width: 100%; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--sep, rgba(0,0,0,.12)); background: var(--group); font: inherit; }

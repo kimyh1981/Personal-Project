@@ -20,17 +20,32 @@
   function parseCleanupList(html) {
     const text = (x) => x.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<[^>]+>/g, ' ')
       .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim();
-    const rows = [...String(html).matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)].map((m) => [...m[1].matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map((c) => text(c[1])));
+    const raw = [...String(html).matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)].map((m) => m[1]);
+    const rows = raw.map((r) => [...r.matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map((c) => text(c[1])));
     const head = rows.find((r) => r.includes('사업장명') && r.includes('진행단계'));
     if (!head) throw new Error('정비사업 정보몽땅 응답 형식 오류');
-    return rows.filter((r) => r !== head && r.length === head.length && r[head.indexOf('사업장명')])
-      .map((r) => Object.fromEntries(head.map((h, i) => [h, r[i]])));
+    const out = [];
+    rows.forEach((r, k) => {
+      if (r === head || r.length !== head.length || !r[head.indexOf('사업장명')]) return;
+      const o = Object.fromEntries(head.map((h, i) => [h, r[i]]));
+      // 공식 출처 링크: 조합 공개 페이지(공지·자료)와 서울 도시계획 지도(정비구역)
+      const cafe = raw[k].match(/cafeOpenPopup\('([^']+)'\)/), rec = raw[k].match(/mapOpenPopup\('([^']+)'\)/);
+      o.cafe = cafe ? cafe[1] : ''; o.rec = rec ? rec[1] : '';
+      out.push(o);
+    });
+    return out;
   }
   // 카카오 검색 결과 → 앱이 쓰는 모양 (서버와 공용)
   const kakaoPoint = (d) => (d ? { lat: Number(d.y), lng: Number(d.x), label: d.address_name || d.place_name } : null);
   const kakaoPick = (d) => (d ? { name: d.place_name, meters: Number(d.distance) || null } : null);
 
-  if (!win) return { parseCleanupList, kakaoPoint, kakaoPick };
+  const cleanupLinks = (row) => ({
+    cafe: row.cafe ? `https://cleanup.seoul.go.kr/cafe/mainIndx.do?cafeUrl=${encodeURIComponent(row.cafe)}` : '',
+    map: row.rec ? `https://urban.seoul.go.kr/view/map/mapPopup.html?recordCode=${encodeURIComponent(row.rec)}` : '',
+    search: `https://cleanup.seoul.go.kr/cleanup/bsnssttus/lscrMainIndx.do`,
+  });
+
+  if (!win) return { parseCleanupList, kakaoPoint, kakaoPick, cleanupLinks };
 
   const store = {
     get: (k) => { try { return win.localStorage.getItem(KEYS[k]) || ''; } catch (_) { return ''; } },
@@ -93,7 +108,7 @@
         .slice(0, 50)
         .map((row) => {
           const t = COND.stageTimeline(row, row['진행단계']);
-          return { sido: '서울', name: row['사업장명'], district: row['자치구'], kind: row['사업구분'], stage: row['진행단계'], address: [row['자치구'], row['대표지번']].filter(Boolean).join(' '), currentStage: t.current, currentStageDate: t.currentDate, timeline: t.steps };
+          return { sido: '서울', name: row['사업장명'], district: row['자치구'], kind: row['사업구분'], stage: row['진행단계'], address: [row['자치구'], row['대표지번']].filter(Boolean).join(' '), currentStage: t.current, currentStageDate: t.currentDate, timeline: t.steps, links: cleanupLinks(row) };
         });
       return json(200, { items, total: redevSnap.rows.length, fetchedAt: redevSnap.fetchedAt, source: '서울시 정비사업 정보몽땅 (6시간마다 자동 조회)' });
     },
@@ -131,5 +146,5 @@
     try { return await route(u.searchParams); } catch (err) { return fail(err.status || 502, err.message, err.code); }
   }
 
-  return { fetch: directFetch, keys: store, parseCleanupList, kakaoPoint, kakaoPick };
+  return { fetch: directFetch, keys: store, parseCleanupList, kakaoPoint, kakaoPick, cleanupLinks };
 });
