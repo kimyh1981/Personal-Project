@@ -63,7 +63,7 @@
     const st = M.kindStatus();
     return `<div class="quick-pick"><h4>구 <span class="muted">여러 개 고를 수 있음</span></h4>${CH.html('q_gus', GU.map((g) => ({ value: g, label: g })), s.gus, { presets: CH.SEOUL_GROUPS.slice(1) })}</div>
       <div class="quick-pick"><h4>주택 종류</h4>${CH.html('q_kinds', M.KINDS.map((k) => ({ value: k, label: k, note: kindNote(k, st) })), s.kinds)}
-        ${M.KINDS.some((k) => st[k] !== 'ok') ? `<p class="muted">빌라(연립·다세대)·단독주택(단독·다가구) 실거래는 공공데이터포털에서 '국토교통부_연립다세대 매매·전월세 실거래가 자료', '국토교통부_단독/다가구 매매·전월세 실거래가 자료'를 활용신청하면 다음 주 자동 수집부터 함께 찾습니다.</p>` : ''}</div>
+        ${M.KINDS.some((k) => st[k] !== 'ok') ? `<p class="muted">빌라(연립·다세대)·단독주택(단독·다가구) 매매 실거래는 6시간마다 자동 수집 때 함께 모읍니다.</p>` : ''}</div>
       <details class="quick-pick" id="q_dongWrap"${s.dongs.length ? ' open' : ''}><summary>동 고르기 <span class="muted">${s.dongs.length ? `${s.dongs.length}곳 선택` : '안 고르면 고른 구 전체'}</span></summary><div id="q_dongs"></div></details>`;
   }
   // 고른 구의 동 칩 (같은 이름의 동이 여러 구에 있어 '구|동'으로 구별)
@@ -259,7 +259,7 @@
     form.dispatchEvent(new Event('change', { bubbles: true }));
     const note = $('q_applied');
     if (note) note.remove();
-    const plan = defer ? ` 세입자 전세 ${won(e.plan.J)}를 안고 지금 현금 ${won(e.plan.cashNow)}로 사고, ${e.plan.startMonths}개월 뒤 입주할 때 모은 돈${e.plan.loanLate ? `과 전세퇴거자금 대출 ${won(e.plan.loanLate)}` : ''}${e.plus ? `, 추가 자금 ${won(e.plus)}` : ''}로 전세금을 돌려주는 계획입니다 (판정은 매수 시점 자금 기준).` : '';
+    const plan = defer && e.plan.noTenant ? ` 세입자 없이 내 현금 ${won(e.plan.cashNow)}로 사고 ${e.plan.startMonths}개월 뒤 입주하는 계획입니다 (대출 없음).` : defer ? ` 세입자 전세 ${won(e.plan.J)}를 안고 지금 현금 ${won(e.plan.cashNow)}로 사고, ${e.plan.startMonths}개월 뒤 입주할 때 모은 돈${e.plan.loanLate ? `과 전세퇴거자금 대출 ${won(e.plan.loanLate)}` : ''}${e.plus ? `, 추가 자금 ${won(e.plus)}` : ''}로 전세금을 돌려주는 계획입니다 (판정은 매수 시점 자금 기준).` : '';
     panel.insertAdjacentHTML('afterbegin', `<p class="demo-note" id="q_applied"><span class="chip good">판정</span> ${esc(c.name)} 전용 ${c.area}㎡로 판정을 계산했습니다.${plan} 월 실수령은 연소득으로 추정(${manw(net)})했고, 생활비는 실수령 − 월 상환 최대로 두었습니다${loc.estimated ? '. 역·학교 거리는 카카오 키가 없어 10분으로 추정했습니다' : ''}. 상세 입력에서 고칠 수 있습니다.</p>`);
     // 휴대폰: 결과 화면으로, PC: 판정으로 스크롤
     const res = document.querySelector('#appbar [data-view="results"][data-tab="conditions"]');

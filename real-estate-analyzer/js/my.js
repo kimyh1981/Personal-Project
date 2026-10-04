@@ -475,8 +475,8 @@
         <tr><td>취득 비용 (세금·중개·등기) — 내 현금에서 먼저</td><td class="n">${won(e.costs)}</td></tr>
         ${e.plan.mode === 'now' ? `<tr><td>내 현금 ${won(e.plan.cashAvail)} − 취득 비용 → 집값에 쓰는 내 현금</td><td class="n">${won(Math.min(c.price, Math.max(0, e.plan.cashAvail - e.costs)))}</td></tr>` : ''}
         ${e.extraCash > 0 ? `<tr><td>이 순위에 더한 내 여유자금</td><td class="n">${won(e.extraCash)}</td></tr>` : ''}
-        ${e.plan.mode === 'defer' ? `<tr><td>거주 계획: 세입자 두고 ${e.plan.startMonths}개월 뒤 입주</td><td class="n">지금 현금 ${won(e.plan.cashNow)} (전세 ${won(e.plan.J)} 안고 매수${e.plan.loanNow ? ` · 대출 ${won(e.plan.loanNow)}` : ''})</td></tr>
-        <tr><td>입주 때 전세금 ${won(e.plan.J)} 돌려주기</td><td class="n">모은 돈 ${won(Math.min(e.plan.fundsAt, e.plan.J))}${e.plan.loanLate ? ` + 전세퇴거자금 대출 ${won(e.plan.loanLate)}` : ''}${e.plus ? ` + 추가 자금 ${won(e.plus)}` : ''}</td></tr>` : ''}
+        ${e.plan.mode === 'defer' ? `<tr><td>거주 계획: 세입자 두고 ${e.plan.startMonths}개월 뒤 입주</td><td class="n">지금 현금 ${won(e.plan.cashNow)} (${e.plan.noTenant ? '세입자 없이 내 현금으로' : `전세 ${won(e.plan.J)} 안고 매수`}${e.plan.loanNow ? ` · 대출 ${won(e.plan.loanNow)}` : ''})</td></tr>
+        ${e.plan.noTenant ? '' : `<tr><td>입주 때 전세금 ${won(e.plan.J)} 돌려주기</td><td class="n">모은 돈 ${won(Math.min(e.plan.fundsAt, e.plan.J))}${e.plan.loanLate ? ` + 전세퇴거자금 대출 ${won(e.plan.loanLate)}` : ''}${e.plus ? ` + 추가 자금 ${won(e.plus)}` : ''}</td></tr>`}` : ''}
         ${e.loan + e.plus > 0 ? `<tr><td>${e.plan.mode === 'defer' ? '대출 합계 / 추가 자금' : '은행 대출 / 추가 자금'}</td><td class="n">${won(e.loan)}${e.plus ? ` / ${won(e.plus)}` : ''}${e.plan.mode === 'now' && e.loan ? ` <span class="muted">(한도 ${won(e.bank.amount)} · ${esc(e.bank.by)})</span>` : ''}</td></tr>
         <tr><td>월 상환 (${e.term}년 만기${e.plan.mode === 'defer' ? ', 입주 뒤부터' : ''})</td><td class="n">${manw(e.payTotal)}</td></tr>
         ${e.debt60 > 0 ? `<tr><td>${p.targetAge}세에 남는 대출 (집 팔아 상환)</td><td class="n">${won(e.debt60)}</td></tr>` : ''}` : `<tr><td>대출 없이 남는 돈</td><td class="n">${won(e.leftover)}</td></tr>`}
