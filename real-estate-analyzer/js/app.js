@@ -1390,6 +1390,17 @@
     persist();
   }
   const schedule = () => { clearTimeout(timer); timer = setTimeout(update, 180); };
+  // 다른 화면(내 조건으로 찾기)이 입력칸을 바꾸지 않고 '이 값이면 판정이 몇 점인지'를 같은 엔진으로 계산
+  window.REA_APP = {
+    scoreFor(over) {
+      const V = { ...formValues() };
+      for (const [k, v] of Object.entries(over)) V[k] = typeof v === 'boolean' ? v : v == null ? '' : String(v);
+      const cond = readConditions(V);
+      if (COND.checklist(cond).some((x) => !x.done) || COND.valueErrors(cond).length) return null;
+      const c = compute(read(V), cond, { light: true });
+      return { score: c.v.score, label: c.v.label, tone: c.v.tone };
+    },
+  };
 
   function selectTab(name) {
     document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));

@@ -888,3 +888,8 @@ button.rule-rank:active { opacity: .75; }
 .future .links a { color: var(--tint); }
 .future-pick select { width: 100%; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--sep, rgba(0,0,0,.12)); background: var(--group-2); color: var(--label); font: 15px var(--font); }
 @media (max-width: 520px) { .future-steps .fs-arrow { display: none; } .future-steps .fs { flex: 1 1 calc(50% - 6px); } }
+.q-item { position: relative; padding-right: 76px; }
+.q-score { position: absolute; top: 12px; right: 12px; display: grid; justify-items: center; min-width: 54px; padding: 6px 6px 5px; border-radius: 12px; background: color-mix(in srgb, var(--tone, var(--warning)) 16%, var(--group-2)); }
+.q-score[data-tone=good] { --tone: var(--good); } .q-score[data-tone=critical] { --tone: var(--critical); }
+.q-score b { font-size: 20px; line-height: 1; font-variant-numeric: tabular-nums; }
+.q-score small { font-size: 10.5px; color: var(--label-2-solid); white-space: nowrap; }

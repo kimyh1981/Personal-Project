@@ -162,7 +162,7 @@
       // 30년 넘은 단지에는 정비사업 단계와 주변 사례로 재건축 가능성·입주까지 기간이 붙어 있다
       const all = M.prepare().all;
       let evals = M.evaluateAll(profile, all);
-      let res = T.classify(evals, profile);
+      let res = T.classify(evals, profile, (x) => M.evaluateAll(profile, all, x));
       let enriched = false;
       if (withEnrich) {
         // 순위별 상위 후보만 입지를 확인한 뒤 다시 매긴다. 순위가 바뀌어 새로 올라온 후보가 있어 두 번 돈다
@@ -170,7 +170,7 @@
           const short = [...new Set(T.topN(res, 8).flatMap((t) => t.items.map((x) => x.e.c)))];
           enriched = await enrich(short, (t) => status(`<p class="muted">${round ? '새로 올라온 후보 ' : ''}${esc(t)}</p>`));
           evals = M.evaluateAll(profile, all);
-          res = T.classify(evals, profile);
+          res = T.classify(evals, profile, (x) => M.evaluateAll(profile, all, x));
           if (!enriched) break;
         }
       }
@@ -354,7 +354,7 @@
     const box = $('tierRules');
     box.hidden = false;
     box.innerHTML = `<h3>나의 순위 조건</h3>
-      <p class="muted">순위마다 메모에 원하는 조건을 적으면 지역(구·동·강남3구 등)·가격(15억 이하)·평형(30평대)·연식(신축·준공 15년 이내)·역세권을 읽어 추천 조건으로 씁니다. 아래 칸으로 대출 방식·월 상환·노후 목표를 바꿉니다. 순위 버튼을 누르면 그 순위 추천이 바로 아래에 나옵니다.</p>
+      <p class="muted">'내 여유자금'에 추가로 동원할 수 있는 내 돈(예금·가족 지원 등, 갚지 않는 돈)을 넣으면 그 순위만 그만큼 현금을 늘려 다시 찾습니다. 순위마다 메모에 원하는 조건을 적으면 지역(구·동·강남3구 등)·가격(15억 이하)·평형(30평대)·연식(신축·준공 15년 이내)·역세권을 읽어 추천 조건으로 씁니다. 아래 칸으로 대출 방식·월 상환·노후 목표를 바꿉니다. 순위 버튼을 누르면 그 순위 추천이 바로 아래에 나옵니다.</p>
       ${T.TIERS.map((t) => {
         const r = R[t.id], full = res.tiers.find((x) => x.id === t.id) || { items: [], memo: { labels: [] } };
         const shown = (tiers10 || []).find((x) => x.id === t.id) || full;
@@ -368,6 +368,7 @@
               <label>대출<select data-rk="loan">${Object.entries(LOAN_LABEL).map(([k, v]) => `<option value="${k}"${r.loan === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
               <label>월 상환 한도 (만원)<input type="number" step="10" min="0" data-rk="pay" value="${r.pay == null ? '' : Math.round(r.pay / MAN)}" placeholder="제한 없음"></label>
               <label>노후 목표 (%)<input type="number" step="10" min="0" max="1000" data-rk="minPct" value="${r.minPct}"></label>
+              <label>내 여유자금 (만원)<input type="number" step="500" min="0" data-rk="extra" value="${r.extra ? Math.round(r.extra / MAN) : ''}" placeholder="없음"></label>
               <span class="chk"><input type="checkbox" data-rk="recon"${r.recon ? ' checked' : ''} id="rc-${t.id}"><label for="rc-${t.id}" style="display:inline;color:inherit;font-size:13px">재건축 기대 반영</label></span>
               ${r.custom ? '<button type="button" class="reset" data-rule-reset>기본값</button>' : ''}
             </div>
@@ -394,6 +395,7 @@
     if (!isFinite(n)) return undefined;
     if (k === 'pay') return Math.max(0, Math.min(1e4, n)) * MAN; // 월 1억원 이하
     if (k === 'minPct') return Math.max(0, Math.min(1000, n));
+    if (k === 'extra') return n > 0 ? Math.min(1e6, n) * MAN : undefined; // 100억원 이하, 0이면 없음
     return undefined;
   }
   $('tierRules').addEventListener('change', (e) => {
@@ -439,6 +441,7 @@
       <div class="tbl-wrap"><table><tbody>
         <tr><td>실거래 중위</td><td class="n">${won(c.price)}${c.jeonse ? ` · 전세 ${won(c.jeonse)}` : ''}</td></tr>
         <tr><td>취득 비용 (세금·중개·등기)</td><td class="n">${won(e.costs)}</td></tr>
+        ${e.extraCash > 0 ? `<tr><td>이 순위에 더한 내 여유자금</td><td class="n">${won(e.extraCash)}</td></tr>` : ''}
         ${e.plan.mode === 'defer' ? `<tr><td>거주 계획: 세입자 두고 ${e.plan.startMonths}개월 뒤 입주</td><td class="n">지금 현금 ${won(e.plan.cashNow)} (전세 ${won(e.plan.J)} 안고 매수${e.plan.loanNow ? ` · 대출 ${won(e.plan.loanNow)}` : ''})</td></tr>
         <tr><td>입주 때 전세금 ${won(e.plan.J)} 돌려주기</td><td class="n">모은 돈 ${won(Math.min(e.plan.fundsAt, e.plan.J))}${e.plan.loanLate ? ` + 전세퇴거자금 대출 ${won(e.plan.loanLate)}` : ''}${e.plus ? ` + 추가 자금 ${won(e.plus)}` : ''}</td></tr>` : ''}
         ${e.loan + e.plus > 0 ? `<tr><td>${e.plan.mode === 'defer' ? '대출 합계 / 추가 자금' : '은행 대출 / 추가 자금'}</td><td class="n">${won(e.loan)}${e.plus ? ` / ${won(e.plus)}` : ''}${e.plan.mode === 'now' && e.loan ? ` <span class="muted">(한도 ${won(e.bank.amount)} · ${esc(e.bank.by)})</span>` : ''}</td></tr>
