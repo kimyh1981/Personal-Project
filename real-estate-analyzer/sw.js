@@ -2,7 +2,7 @@
 // - 앱 파일: 네트워크 우선(항상 최신), 오프라인이면 캐시
 // - /api/ (공공데이터): 절대 캐시하지 않음 — 최신 데이터만 쓴다
 // - 글꼴: 캐시 우선
-const VERSION = 'rea-v16';
+const VERSION = 'rea-v17';
 const SHELL = [
   './', 'index.html', 'my.html', 'guide.html', 'manifest.webmanifest', 'css/style.css',
   'js/policy.js', 'js/amount.js', 'js/engine.js', 'js/conditions.js', 'js/vworld.js', 'js/direct.js', 'js/geo.js', 'js/recommend.js', 'js/charts.js', 'js/app.js', 'js/pwa.js', 'js/tiers.js', 'js/chips.js', 'js/mymarket.js', 'js/future.js', 'js/quick.js', 'js/my.js',

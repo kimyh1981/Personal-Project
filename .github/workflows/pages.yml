@@ -47,9 +47,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: real-estate-analyzer/.market
-          # v3: 아파트 + 빌라·단독주택 매매 수집. 수집이 실패하면 예전 캐시를 그대로 쓴다
-          key: market-seoul-v3-${{ steps.week.outputs.week }}
+          # v4: 아파트 + 빌라·단독주택 매매·전월세 수집. 수집이 실패하면 예전 캐시를 그대로 쓴다
+          key: market-seoul-v4-${{ steps.week.outputs.week }}
           restore-keys: |
+            market-seoul-v4-
             market-seoul-v3-
             market-seoul-v2-
             market-seoul-
