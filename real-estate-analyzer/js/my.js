@@ -223,8 +223,26 @@
       <p class="muted">이 기기(또는 설치된 앱)에는 조건이 저장돼 있지 않습니다. 받으신 <b>개인 설정 링크</b>를 아래에 붙여넣으면 한 번에 채워집니다. 또는 아래 '내 기준'을 직접 채우세요.</p>
       ${setupPasteHtml()}`;
     $('myTiers').innerHTML = ''; $('tierNav').innerHTML = ''; $('tierRules').hidden = true;
-    $('myProfileCard').open = true;
+    openProfile(false);
   }
+
+  // 내 기준 열기·닫기 (버튼 방식: 아이폰 사파리에서도 열린다). 주소 끝이 #myProfileCard 면 열고 그 자리로 이동
+  function openProfile(scroll, open = true) {
+    const body = $('myProfileBody'), btn = $('myProfileToggle');
+    body.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+    btn.querySelector('.profile-toggle-label').textContent = open ? '닫기' : '열기';
+    if (open && scroll) requestAnimationFrame(() => $('myProfileCard').scrollIntoView({ block: 'start' }));
+  }
+  $('myProfileToggle').addEventListener('click', () => openProfile(false, $('myProfileBody').hidden));
+  const openFromHash = () => { if (location.hash === '#myProfileCard') openProfile(true); };
+  window.addEventListener('hashchange', openFromHash);
+  document.addEventListener('click', (ev) => {
+    const a = ev.target.closest('[data-open-profile]');
+    if (!a) return;
+    ev.preventDefault();
+    openProfile(true);
+  });
 
   function changeBadge(tierId, cid, rank, last) {
     if (!last || !last.tiers || !last.tiers[tierId]) return '';
@@ -247,7 +265,7 @@
     if (defer) {
       verdict = rr.deferOK
         ? `<p><span class="chip good">가능</span> ${esc(rr.why)}</p><p class="muted">수도권·규제지역 주담대는 6개월 안에 전입해야 해서, 나중에 입주하려면 매수 때 대출 없이 세입자 전세보증금을 안고 삽니다. 입주할 때 돌려줄 전세금은 그동안 살 집 전세금 + 남은 현금 + 그동안 모은 돈(월 ${manw(p.pay)})으로 내고, 모자라면 전세퇴거자금 대출(수도권 1주택자 ${won(RS.jeonseReturnCap)} 한도)과 추가 자금으로 채웁니다.</p>`
-        : `<p><span class="chip critical">불가</span> ${esc(rr.why)}</p>
+        : `<p class="ban-banner" role="alert"><b>불가</b><span>토지거래허가: 서울 아파트는 매수 후 ${p.deferMonths}개월 뒤 입주하는 내 계획으로는 살 수 없습니다 (허가 후 ${RS.registerMonths}개월 안에 입주해야 함). ${esc(rr.why.replace(/^토지거래허가구역: /, ''))}</span></p>
            <p class="muted">그래서 모든 단지를 <b>바로 입주</b>로 계산했습니다 (그동안 살 집 전세금 ${won(f.temp)}은 필요 없다고 보고 매수 자금에 넣음). 나중에 입주가 가능해지는 경우: 서울 아파트 토지거래허가가 ${RS.landPermitUntil}에 끝나 해제된 뒤 매수 — 아래 '내 기준'에서 매수 시기를 2027년 이후로, 허가 기간 뒤를 '해제된다고 보기'로 바꾸면 계산합니다 (연장 여부는 아직 정해지지 않음).</p>`;
       if (rr.deferOK && planStats) verdict += `<p class="muted">이번 주 후보 중 ${planStats.defer.toLocaleString()}곳은 나중에 입주로, ${planStats.forced.toLocaleString()}곳은 바로 입주로 계산했습니다 (전세 시세가 없거나 지금 현금이 모자란 곳).</p>`;
     } else if (rr.permit) verdict = `<p class="muted">${esc(rr.why)}</p>`;
@@ -268,6 +286,7 @@
     const prevWeek = last && last.week !== week ? last : load(LAST + '-prev', null);
     $('myStatus').innerHTML = `
       <h3>이번 주 기준 · 서울 시장 ${esc(week)} 수집</h3>
+      <div class="row"><button type="button" class="edit-profile" data-open-profile>내 기준 변경</button></div>
       <div class="tbl-wrap"><table><tbody>
         <tr><td>두 채 순자산 (시세 − 대출 − 전세)</td><td class="n">${won(f.equity)}</td></tr>
         <tr><td>− 매도 중개보수 · 양도세 예상 · 비상금</td><td class="n">${won(-(f.sellCosts + f.cgt + f.reserve))}</td></tr>
@@ -470,6 +489,7 @@
           <p class="muted">${esc(reg.name)} ${esc(c.dong)}${c.builtYear ? ` · ${c.builtYear}년 준공 (${age}년차)` : ''} · 최근 6개월 거래 ${c.count}건</p></div>
         <span class="reco-score" data-tone="${x.score >= 70 ? 'good' : x.score >= 55 ? 'warning' : 'critical'}"><b>${x.score}</b>점수</span>
       </div>
+      ${p.residence === 'defer' && e.plan.forced && p.deferMonths > P.RESIDENCE.registerMonths ? `<p class="ban-banner" role="alert"><b>불가</b><span>토지거래허가: 이 집은 입주를 미룰 수 없어 내 계획(매수 후 ${p.deferMonths}개월 뒤 입주)으로는 살 수 없습니다. 허가 후 ${P.RESIDENCE.registerMonths}개월 안에 입주해야 하며, 아래 계산은 바로 입주했을 때 기준입니다.</span></p>` : ''}
       <div class="tbl-wrap"><table><tbody>
         <tr><td>실거래 중위</td><td class="n">${won(c.price)}${c.jeonse ? ` · 전세 ${won(c.jeonse)}` : ''}</td></tr>
         <tr><td>취득 비용 (세금·중개·등기) — 내 현금에서 먼저</td><td class="n">${won(e.costs)}</td></tr>
@@ -477,7 +497,8 @@
         ${e.extraCash > 0 ? `<tr><td>이 순위에 더한 내 여유자금</td><td class="n">${won(e.extraCash)}</td></tr>` : ''}
         ${e.plan.mode === 'defer' ? `<tr><td>거주 계획: 세입자 두고 ${e.plan.startMonths}개월 뒤 입주</td><td class="n">지금 현금 ${won(e.plan.cashNow)} (${e.plan.noTenant ? '세입자 없이 내 현금으로' : `전세 ${won(e.plan.J)} 안고 매수`}${e.plan.loanNow ? ` · 대출 ${won(e.plan.loanNow)}` : ''})</td></tr>
         ${e.plan.noTenant ? '' : `<tr><td>입주 때 전세금 ${won(e.plan.J)} 돌려주기</td><td class="n">모은 돈 ${won(Math.min(e.plan.fundsAt, e.plan.J))}${e.plan.loanLate ? ` + 전세퇴거자금 대출 ${won(e.plan.loanLate)}` : ''}${e.plus ? ` + 추가 자금 ${won(e.plus)}` : ''}</td></tr>`}` : ''}
-        ${e.loan + e.plus > 0 ? `<tr><td>${e.plan.mode === 'defer' ? '대출 합계 / 추가 자금' : '은행 대출 / 추가 자금'}</td><td class="n">${won(e.loan)}${e.plus ? ` / ${won(e.plus)}` : ''}${e.plan.mode === 'now' && e.loan ? ` <span class="muted">(한도 ${won(e.bank.amount)} · ${esc(e.bank.by)})</span>` : ''}</td></tr>
+        ${e.loan + e.plus > 0 ? `<tr><td>${e.plan.mode === 'defer' ? '대출 합계 / 추가 자금' : '은행 대출 (법정 최대) / 추가 자금'}</td><td class="n">${won(e.loan)}${e.plus ? ` / ${won(e.plus)}` : ''}${e.plan.mode === 'now' && e.loan ? ` <span class="muted">(${esc(e.bank.by)})</span>` : ''}</td></tr>
+        ${e.plan.mode === 'now' && e.loan && e.leftover > 0 ? `<tr><td>최대로 받아 남는 현금</td><td class="n">${won(e.leftover)}</td></tr>` : ''}
         <tr><td>월 상환 (${e.term}년 만기${e.plan.mode === 'defer' ? ', 입주 뒤부터' : ''})</td><td class="n">${manw(e.payTotal)}</td></tr>
         ${e.debt60 > 0 ? `<tr><td>${p.targetAge}세에 남는 대출 (집 팔아 상환)</td><td class="n">${won(e.debt60)}</td></tr>` : ''}` : `<tr><td>대출 없이 남는 돈</td><td class="n">${won(e.leftover)}</td></tr>`}
         ${e.saveMonthly > 0 ? `<tr><td>상환 여유분 저축 (월 ${manw(e.saveMonthly)}, 연 ${pct(p.cashReturn, 1)})</td><td class="n">${p.targetAge}세 ${won(e.save60)}</td></tr>` : ''}
@@ -497,7 +518,7 @@
 
   $('myMethod').innerHTML = [
     '두 채를 모두 판 순자산에서 매도 중개보수·양도세 예상·비상금을 빼고, 서울 아파트 취득 비용(취득세·중개보수·등기)을 더해 모자라는 돈을 계산합니다.',
-    '은행 대출은 서울(규제지역) 무주택 기준 LTV 40%, 주택가격별 한도(15억 이하 6억 · 25억 이하 4억 · 초과 2억), 연소득을 넣으면 스트레스 DSR(수도권 하한 3%p × 금리 유형 반영비율, 기본 주기형 40%, 만기 30년 상한)까지 적용해 셋 중 가장 작은 값을 한도로 봅니다.',
+    '대출이 필요한 집은 모자란 만큼이 아니라 그 집에서 받을 수 있는 법정 최대 한도로 계산하고, 더 받은 몫은 현금으로 남겨 60세 노후 자금에 더합니다. 은행 대출은 서울(규제지역) 무주택 기준 LTV 40%, 주택가격별 한도(15억 이하 6억 · 25억 이하 4억 · 초과 2억), 연소득을 넣으면 스트레스 DSR(수도권 하한 3%p × 금리 유형 반영비율, 기본 주기형 40%, 만기 30년 상한)까지 적용해 셋 중 가장 작은 값을 한도로 봅니다.',
     '거주 계획이 \'나중에 입주\'면 세입자 전세보증금을 안고 대출 없이 사고, 입주할 때 그동안 살 집 전세금·남은 현금·모은 돈과 전세퇴거자금 대출(1억 한도)로 전세금을 돌려준다고 계산합니다. 서울 아파트는 토지거래허가구역이라 2026-05-12부터 계속 무주택인 사람만 입주를 미룰 수 있고, 아니면 바로 입주로 계산합니다.',
     '순위 메모에 적은 지역·가격·평형·연식·역세권은 그 순위의 조건이 됩니다. 그 지역에 추천이 없으면 같은 조건으로 추천이 나오는 구·동을 안내합니다.',
     '대출은 만기(기본 30년)로 매달 갚다가, 60세에 남은 대출은 집을 팔아 한 번에 갚고 후순위 지역의 작은 집으로 옮긴다고 봅니다. 노후 자금 = 60세 시세 − 남은 대출 − 옮겨 살 집 + 상환 여유분 저축.',
@@ -512,6 +533,7 @@
   ].map((s) => `<li>${esc(s)}</li>`).join('');
 
   renderForm();
+  openFromHash();
   run(true);
   // 내 기준 카드 안에도 붙여넣기 칸 (다른 기기 조건으로 덮어쓰기)
   (function () {

@@ -359,6 +359,14 @@
     return { permit, zone, afterExpiry, lifted, eligible, deferOK, loanMoveIn, why };
   }
 
+  // 매수 예정 → 희망 입주까지 개월 수 (둘 중 하나라도 없으면 null)
+  function permitMoveGap(c) {
+    const t = c.timing || {};
+    const m = (s) => (/^\d{4}-\d{2}/.test(s || '') ? Number(s.slice(0, 4)) * 12 + Number(s.slice(5, 7)) : null);
+    const a = m(t.purchaseDate), b = m(t.moveInBy);
+    return a == null || b == null ? null : b - a;
+  }
+
   // ── 종합 ──────────────────────────────────────────────────────────────
   /**
    * 규제 판정 + 조건 플래그. level: block(차단) / warn(주의) / info(정보)
@@ -402,8 +410,16 @@
 
     // 규제
     if (landPermit) {
+      const gap = permitMoveGap(c);
       if (!livesIn(c)) flag(rr.deferOK ? 'warn' : 'block', '규제', rr.why);
-      else flag('info', '규제', '토지거래허가구역: 계약 전 구청 허가 필요, 2년 실거주 의무');
+      else if (gap != null && gap > P.RESIDENCE.registerMonths) {
+        // 바로 입주 조건(허가 후 4개월 안 입주)을 희망 입주 시기가 넘기면 매수 불가
+        const t = c.timing;
+        flag('block', '규제', `불가 — 토지거래허가구역: 허가 후 ${P.RESIDENCE.registerMonths}개월 안에 입주해야 하는데, 희망 입주 ${t.moveInBy}는 매수 ${t.purchaseDate}보다 ${gap}개월 뒤라 즉시 입주 조건을 못 지킵니다. `
+          + (rr.eligible && (!t.purchaseDate || t.purchaseDate <= P.RESIDENCE.defer.applyUntil.slice(0, 7))
+            ? `세입자 있는 집을 사면 입주를 미룰 수 있습니다 (${P.RESIDENCE.defer.nohomeSince}부터 계속 무주택 · 임대차 종료일까지).`
+            : `입주 유예는 ${P.RESIDENCE.defer.nohomeSince}부터 계속 무주택인 사람만 받을 수 있어 대상이 아닙니다. 매수 후 ${P.RESIDENCE.registerMonths}개월 안에 입주하거나, 허가 대상이 아닌 빌라·단독주택을 보세요.`));
+      } else flag('info', '규제', '토지거래허가구역: 계약 전 구청 허가 필요, 2년 실거주 의무');
     } else if (rr.lifted) {
       flag('warn', '규제', rr.why);
     } else if (permitZone) {

@@ -34,9 +34,13 @@ test('평가: 모자라는 돈은 은행 한도까지 대출, 넘는 부분은 �
   const f = T.funds(p);
   const e = T.evaluate(cand({ name: '12억', price: 12 * EOK }), p, reg, f);
   assert.ok(e.need > 0 && e.plus === 0);
+  // 대출이 필요하면 모자란 만큼이 아니라 그 집의 법정 최대 한도(4.8억)까지 받고, 더 받은 몫은 현금으로 남긴다
+  assert.equal(e.loan, T.bankLimit(12 * EOK, 'seoul-송파구', p, 15).amount);
+  assert.equal(Math.round(e.leftover), Math.round(e.loan - e.need));
+  assert.ok(T.cautions(e, p).some((s) => /최대 한도/.test(s)));
   assert.equal(e.term, 15);
   assert.equal(Math.round(e.debt60), 0); // 15년 만기면 60세에 다 갚음
-  assert.ok(e.payTotal > 250 * MAN && e.payTotal < 350 * MAN);
+  assert.ok(e.payTotal > 250 * MAN);
   const big = T.evaluate(cand({ name: '22억', price: 22 * EOK }), p, reg, f);
   assert.ok(big.plus > 0 && big.loan === 4 * EOK);
   const cheap = T.evaluate(cand({ name: '7억', price: 7 * EOK }), p, reg, f);
@@ -284,7 +288,8 @@ test('추가 동원 가능 자금: 내 기준 현금에 더해 모든 순위 계
   const c = cand({ name: '12억', price: 12 * EOK });
   const e1 = T.evaluate(c, profile(), reg, a), e2 = T.evaluate(c, profile({ extraFunds: 2 * EOK }), reg, b);
   assert.equal(Math.round(e1.need - e2.need), 2 * EOK);
-  assert.ok(e2.loan < e1.loan);
+  assert.equal(e2.loan, e1.loan); // 대출은 둘 다 최대 한도
+  assert.equal(Math.round(e2.leftover - e1.leftover), 2 * EOK); // 추가 자금만큼 현금이 더 남는다
 });
 
 test('취득세 등 매수 비용은 내 현금에서: 현금이 비용보다 적으면 대출로 못 내고 추가 자금으로 남는다', () => {

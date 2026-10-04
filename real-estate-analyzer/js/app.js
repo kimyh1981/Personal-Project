@@ -344,7 +344,10 @@
       else if (assess.verdict === '진행가능' && pf.checks.some((ch) => ch.level === 'warn')) assess.verdict = '조건부';
     }
     // 필수 조건 점검의 차단 항목은 점수와 무관하게 매수 불가
-    if (assess.verdict === '불가') { v.label = '매수 불가 — 조건 차단'; v.tone = 'critical'; }
+    if (assess.verdict === '불가') {
+      v.label = assess.flags.some((f) => f.level === 'block' && /토지거래허가/.test(f.message)) ? '매수 불가 — 토지거래허가 입주 조건' : '매수 불가 — 조건 차단';
+      v.tone = 'critical';
+    }
     else if (v.tone === 'good' && assess.flags.some((f) => f.level === 'warn' && f.category !== '규제')) { v.label = '조건부 검토'; v.tone = 'warning'; }
     return { i, hh, r, cond, capacity, livesIn, tenantDeposit, gap, assess, pf, privateCash, privateUsed, affordBank, afford, sens, limit, loan, termYears, publicPrice, closing, holding, monthlyPayment, need, fundingGap, leftover, stress, sim, base, breakeven, mc, policyLoans, jeonseRatio, v };
   }
@@ -368,6 +371,7 @@
       <div class="score" style="--pct:${v.score}" aria-label="종합 점수 ${v.score}점"><b>${v.score}</b><span>/ 100</span></div>
       <div>
         <h2>${esc(v.label)}</h2>
+        ${c.assess.flags.filter((f) => f.level === 'block').map((f) => `<p class="ban-banner" role="alert"><b>불가</b><span>${esc(f.message.replace(/^불가 — /, ''))}</span></p>`).join('')}
         <p class="sub">${esc(c.i.purpose)} · ${esc(c.r.name)} ${esc(c.i.propertyType)} · ${esc(won(c.i.price))} · 전용 ${c.i.areaM2}㎡ · ${c.i.years}년 ${c.livesIn ? '거주' : '보유'} 가정</p>
         ${mapLink(c)}
         <ul class="checklist">${v.checks.map((k) => `<li>${chip(k.status)}<span>${esc(k.label)}</span><span class="d">${esc(k.detail)}</span></li>`).join('')}</ul>
