@@ -309,8 +309,9 @@
     if (p.residence !== 'defer') return now();
     const rr = COND.residenceRule({ regionId: c.regionId, propertyType: c.kind || '아파트', buyDate: p.buyDate || thisMonth(), nohomeSince: p.nohomeSince, tenant: true, permitAfter: p.permitAfter });
     if (!rr.deferOK) return now(rr.why, rr, true);
+    // 전세 시세가 없으면(빌라·단독주택) 세입자 없이 내 현금으로 사서 비워 두거나 직접 세를 놓는 경우로 보수적으로 계산
     const J = c.jeonse || 0;
-    if (!J) return now('같은 평형 전세 시세가 없어 세입자를 두고 사는 계획은 계산하지 못했습니다.', rr, true);
+    if (!J && rr.permit) return now('토지거래허가 대상 주택은 세입자가 있어야 입주를 미룰 수 있는데, 같은 평형 전세 시세가 없어 바로 입주로 계산했습니다.', rr, true);
     const M = Math.max(1, Math.round(p.deferMonths || 24));
     // 매수 때 은행 대출: 허가 대상 주택은 전입의무가 면제되지만 세입자 보증금이 먼저 잡혀 LTV에서 빠진다
     const loanNow = rr.loanMoveIn ? 0 : Math.max(0, Math.min(bank.amount, bank.ltv - J));
@@ -325,7 +326,7 @@
     const capR = r.capital || r.regulated ? P.RESIDENCE.jeonseReturnCap : Infinity;
     const loanLate = Math.max(0, Math.min(need, capR, bank.ltv - loanNow, bank.dsr - loanNow, bank.cap - loanNow));
     const plus = Math.max(0, need - loanLate);
-    return { mode: 'defer', need, loan: loanNow + loanLate, loanNow, loanLate, plus, startMonths: M, cashNow, left, saved, fundsAt, J, capR, why: rr.why, rule: rr, forced: false, cashAvail: f.cashDefer, taxShort: 0 };
+    return { mode: 'defer', need, loan: loanNow + loanLate, loanNow, loanLate, plus, startMonths: M, cashNow, left, saved, fundsAt, J, capR, why: rr.why, rule: rr, forced: false, cashAvail: f.cashDefer, taxShort: 0, noTenant: !J };
   }
 
   /**
@@ -626,6 +627,7 @@
     if (e.c.kind === '단독주택') out.push('단독·다가구: 실거래에 이름·정확한 지번이 없어 같은 동·비슷한 연면적 거래를 묶은 시세 (개별 매물은 직접 확인) · 다가구는 세입자 여러 명의 보증금을 함께 떠안을 수 있음 · 아파트가 아니라 서울 토지거래허가 대상은 아니지만 정비구역·신속통합기획 후보지는 따로 허가 대상일 수 있음');
     if (pl.taxShort > 0) out.push(`취득세·중개·등기 비용 ${Math.round(e.costs / MAN).toLocaleString()}만원을 낼 내 현금이 ${Math.round(pl.taxShort / MAN).toLocaleString()}만원 부족 (은행 대출로는 낼 수 없어 추가 자금 필요)`);
     if (e.extraCash > 0) out.push(`이 순위는 내 여유자금 ${e.extraCash >= EOK ? `${+(e.extraCash / EOK).toFixed(2)}억원` : `${Math.round(e.extraCash / MAN).toLocaleString()}만원`}을 더해 계산 (갚지 않는 내 돈으로 봄)`);
+    if (pl.mode === 'defer' && pl.noTenant) out.push(`세입자 없이 내 현금으로 사는 경우로 계산 (대출은 6개월 안 전입이 필요해 쓰지 않음). 세입자를 들이면 그 보증금만큼 현금이 덜 듭니다.`);
     if (pl.mode === 'defer') out.push(pl.rule && pl.rule.lifted ? `토지거래허가 해제 가정 (${P.RESIDENCE.landPermitUntil} 뒤, 연장 여부 미정) — 연장되면 이 계획은 불가` : pl.why);
     else if (pl.forced) out.push(`나중에 입주 불가 → 바로 입주로 계산: ${pl.why}`);
     else if (E.region(e.c.regionId).landPermit && (e.c.kind || '아파트') === '아파트') out.push(`토지거래허가구역: 허가 후 ${P.RESIDENCE.registerMonths}개월 안에 입주, ${P.RESIDENCE.stayYears}년 실거주`);

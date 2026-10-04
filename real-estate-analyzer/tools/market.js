@@ -26,8 +26,8 @@ const asHouse = (body) => body.replace(/<item>([\s\S]*?)<\/item>/g, (m, it) => {
 });
 const KINDS = [
   { kind: '아파트', trade: API + 'RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade', rent: API + 'RTMSDataSvcAptRent/getRTMSDataSvcAptRent', history: true, prep: (b) => b },
-  { kind: '빌라', trade: API + 'RTMSDataSvcRHTrade/getRTMSDataSvcRHTrade', rent: API + 'RTMSDataSvcRHRent/getRTMSDataSvcRHRent', history: false, prep: asApt('mhouseNm') },
-  { kind: '단독주택', trade: API + 'RTMSDataSvcSHTrade/getRTMSDataSvcSHTrade', rent: API + 'RTMSDataSvcSHRent/getRTMSDataSvcSHRent', history: false, prep: asHouse },
+  { kind: '빌라', trade: API + 'RTMSDataSvcRHTrade/getRTMSDataSvcRHTrade', rent: null, history: false, prep: asApt('mhouseNm') },
+  { kind: '단독주택', trade: API + 'RTMSDataSvcSHTrade/getRTMSDataSvcSHTrade', rent: null, history: false, prep: asHouse },
 ];
 
 function get(url) {
@@ -97,9 +97,9 @@ async function build(key, now = new Date()) {
     }
     kinds[K.kind] = 'ok';
     const parseT = (b) => E.parseRtmsXml(K.prep(b)), parseR = (b) => E.parseRtmsRentXml(K.prep(b));
-    // 전월세는 따로 활용신청: 안 돼 있으면 매매만 모은다 (전세 시세 없음 → 세입자 두고 사는 계획은 계산 못 함)
-    let rentOk = true;
-    try { await month(K.rent, key, regions[0].lawd, recent[0], parseR); calls++; } catch (err) { if (err.unregistered) { rentOk = false; kinds[K.kind + ' 전월세'] = '활용신청 필요'; } }
+    // 빌라·단독주택은 매매만 모은다 (서울 집 매수에 집중: 전월세는 쓰지 않음)
+    let rentOk = !!K.rent;
+    if (rentOk) try { await month(K.rent, key, regions[0].lawd, recent[0], parseR); calls++; } catch (err) { if (err.unregistered) rentOk = false; }
     await pool(regions.map((r) => async () => {
       const take = async (base, yms, parse) => {
         const res = [];

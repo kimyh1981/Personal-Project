@@ -297,3 +297,16 @@ test('취득세 등 매수 비용은 내 현금에서: 현금이 비용보다 �
   assert.ok(e.plus >= e.plan.taxShort);
   assert.ok(T.cautions(e, poor).some((s) => /취득세/.test(s)));
 });
+
+test('나중에 입주 + 전세 시세 없음: 빌라는 세입자 없이 내 현금으로, 허가 대상 아파트는 바로 입주', () => {
+  const p = profile({ residence: 'defer', deferMonths: 24, tempHousing: 8000 * MAN, buyDate: '2026-11', annualIncome: 1 * EOK });
+  const f = T.funds(p);
+  const villa = T.evaluate(cand({ name: '빌라', kind: '빌라', price: 6 * EOK, jeonse: null }), p, reg, f);
+  assert.equal(villa.plan.mode, 'defer');
+  assert.ok(villa.plan.noTenant);
+  assert.equal(villa.loan, 0);
+  assert.equal(Math.round(villa.plan.cashNow), Math.round(6 * EOK + villa.costs));
+  const apt = T.evaluate(cand({ name: '아파트', price: 6 * EOK, jeonse: null }), { ...p, nohomeSince: '2025-01-01' }, reg, f);
+  assert.equal(apt.plan.mode, 'now');
+  assert.match(apt.plan.why, /세입자/);
+});
