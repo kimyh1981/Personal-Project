@@ -297,7 +297,9 @@
   function plan(c, p, f, bank, costs, term) {
     const now = (why, rule, forced) => {
       const need = c.price + costs - f.cash;
-      return { mode: 'now', need, loan: Math.max(0, Math.min(need, bank.amount)), loanLate: 0, plus: Math.max(0, need - bank.amount), startMonths: 0, why: why || '', rule: rule || null, forced: !!forced };
+      // 취득세·중개보수·등기 비용은 내 현금에서 먼저 낸다. 은행 대출(LTV·가격별 한도)은 집값에만 쓰므로 비용이 모자라면 추가 자금으로 남는다
+      return { mode: 'now', need, loan: Math.max(0, Math.min(need, bank.amount)), loanLate: 0, plus: Math.max(0, need - bank.amount), startMonths: 0, why: why || '', rule: rule || null, forced: !!forced,
+        cashAvail: f.cash, taxShort: Math.max(0, costs - f.cash) };
     };
     if (p.residence !== 'defer') return now();
     const rr = COND.residenceRule({ regionId: c.regionId, buyDate: p.buyDate || thisMonth(), nohomeSince: p.nohomeSince, tenant: true, permitAfter: p.permitAfter });
@@ -318,7 +320,7 @@
     const capR = r.capital || r.regulated ? P.RESIDENCE.jeonseReturnCap : Infinity;
     const loanLate = Math.max(0, Math.min(need, capR, bank.ltv - loanNow, bank.dsr - loanNow, bank.cap - loanNow));
     const plus = Math.max(0, need - loanLate);
-    return { mode: 'defer', need, loan: loanNow + loanLate, loanNow, loanLate, plus, startMonths: M, cashNow, left, saved, fundsAt, J, capR, why: rr.why, rule: rr, forced: false };
+    return { mode: 'defer', need, loan: loanNow + loanLate, loanNow, loanLate, plus, startMonths: M, cashNow, left, saved, fundsAt, J, capR, why: rr.why, rule: rr, forced: false, cashAvail: f.cashDefer, taxShort: 0 };
   }
 
   /**
@@ -615,6 +617,7 @@
     if (e.plus > 0 && (!e.plan || e.plan.mode !== 'defer')) out.push(`은행 대출 한도 밖 ${Math.round(e.plus / MAN).toLocaleString()}만원을 추가 자금(연 ${(p.plusRate * 100).toFixed(1)}%)으로 마련해야 함`);
     if (e.loc.estimated) out.push('입지는 구 중심 기준 추정');
     const pl = e.plan || {};
+    if (pl.taxShort > 0) out.push(`취득세·중개·등기 비용 ${Math.round(e.costs / MAN).toLocaleString()}만원을 낼 내 현금이 ${Math.round(pl.taxShort / MAN).toLocaleString()}만원 부족 (은행 대출로는 낼 수 없어 추가 자금 필요)`);
     if (e.extraCash > 0) out.push(`이 순위는 내 여유자금 ${e.extraCash >= EOK ? `${+(e.extraCash / EOK).toFixed(2)}억원` : `${Math.round(e.extraCash / MAN).toLocaleString()}만원`}을 더해 계산 (갚지 않는 내 돈으로 봄)`);
     if (pl.mode === 'defer') out.push(pl.rule && pl.rule.lifted ? `토지거래허가 해제 가정 (${P.RESIDENCE.landPermitUntil} 뒤, 연장 여부 미정) — 연장되면 이 계획은 불가` : pl.why);
     else if (pl.forced) out.push(`나중에 입주 불가 → 바로 입주로 계산: ${pl.why}`);

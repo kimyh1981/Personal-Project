@@ -893,3 +893,6 @@ button.rule-rank:active { opacity: .75; }
 .q-score[data-tone=good] { --tone: var(--good); } .q-score[data-tone=critical] { --tone: var(--critical); }
 .q-score b { font-size: 20px; line-height: 1; font-variant-numeric: tabular-nums; }
 .q-score small { font-size: 10.5px; color: var(--label-2-solid); white-space: nowrap; }
+.funds-sum { display: grid; gap: 4px; padding: 12px var(--pad); font-size: 14px; }
+.funds-sum p { margin: 0; }
+.funds-sum b { font-size: 16px; color: var(--tint); }

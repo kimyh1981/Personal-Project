@@ -286,3 +286,14 @@ test('추가 동원 가능 자금: 내 기준 현금에 더해 모든 순위 계
   assert.equal(Math.round(e1.need - e2.need), 2 * EOK);
   assert.ok(e2.loan < e1.loan);
 });
+
+test('취득세 등 매수 비용은 내 현금에서: 현금이 비용보다 적으면 대출로 못 내고 추가 자금으로 남는다', () => {
+  const poor = profile({ homes: [{ name: 'A', value: 3 * EOK, loan: 2.9 * EOK, jeonse: 0 }] });
+  const f = T.funds(poor);
+  const e = T.evaluate(cand({ name: '12억', price: 12 * EOK }), poor, reg, f);
+  assert.ok(f.cash < e.costs);
+  assert.equal(Math.round(e.plan.taxShort), Math.round(e.costs - f.cash));
+  assert.ok(e.loan <= T.bankLimit(12 * EOK, 'seoul-송파구', poor, e.term).amount);
+  assert.ok(e.plus >= e.plan.taxShort);
+  assert.ok(T.cautions(e, poor).some((s) => /취득세/.test(s)));
+});
