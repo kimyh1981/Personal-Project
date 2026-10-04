@@ -33,7 +33,8 @@
     const cols = market.cols;
     return market.cands.map((row) => {
       const o = Object.fromEntries(cols.map((c, i) => [c, row[i]]));
-      return { id: `${o.r}|${o.n}|${o.d}|${Math.round(o.a)}`, regionId: o.r, name: o.n, dong: o.d, jibun: o.j, area: o.a, price: o.p, jeonse: o.je, count: o.c, builtYear: o.y, g5: o.g5, g10: o.g10 };
+      const kind = o.k || '아파트';
+      return { id: `${o.r}|${o.n}|${o.d}|${Math.round(o.a)}${kind === '아파트' ? '' : '|' + kind}`, regionId: o.r, name: o.n, dong: o.d, jibun: o.j, area: o.a, price: o.p, jeonse: o.je, count: o.c, builtYear: o.y, g5: o.g5, g10: o.g10, kind };
     });
   }
 
@@ -52,7 +53,7 @@
     return prepared;
   }
 
-  const dongOf = (c) => prepare().dongs.get(c.regionId + '|' + c.dong);
+  const dongOf = (c) => prepare().dongs.get(T.dongKey(c));
   function evaluate(c, p, f = T.funds(p)) {
     return T.evaluate(c, p, market.regions[c.regionId], f, dongOf(c));
   }
@@ -62,7 +63,21 @@
     return list.map((c) => evaluate(c, p, f));
   }
 
+  // 내 기준의 찾을 지역(구, 비우면 서울 전체)·주택 종류(비우면 아파트)
+  const KINDS = ['아파트', '빌라', '오피스텔'];
+  const kindsOf = (p) => (p.kinds && p.kinds.length ? p.kinds : ['아파트']);
+  function scope(p, list = prepare().all) {
+    const gus = new Set((p.regions || []).map((g) => 'seoul-' + g)), ks = new Set(kindsOf(p));
+    return list.filter((c) => (!gus.size || gus.has(c.regionId)) && ks.has(c.kind));
+  }
+  // 시장 데이터에 들어 있는 주택 종류와 수집 상태 (빌라·오피스텔은 활용신청해야 모인다)
+  const kindStatus = () => {
+    const have = new Set(prepare().all.map((c) => c.kind));
+    return Object.fromEntries(KINDS.map((k) => [k, have.has(k) ? 'ok' : (market && market.kinds && market.kinds[k]) || '수집 전']));
+  };
+
   root.REA_MYMARKET = {
+    KINDS, kindsOf, scope, kindStatus,
     load, prepare, evaluate, evaluateAll, loadProfile, hasProfile, dongOf, PROFILE_KEY,
     get market() { return market; },
     get redevSnap() { return redevSnap; },

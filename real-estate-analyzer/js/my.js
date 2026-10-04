@@ -3,7 +3,7 @@
  * 처음 설정: my.html#setup=<base64url JSON> 링크로 열면 조건을 저장하고 주소에서 지운다 (서버로 전송되지 않음).
  */
 (function () {
-  const E = window.REA, P = window.REA_POLICY, T = window.REA_TIERS, GEO = window.REA_GEO, COND = window.REA_COND;
+  const E = window.REA, P = window.REA_POLICY, T = window.REA_TIERS, GEO = window.REA_GEO, COND = window.REA_COND, CH = window.REA_CHIPS;
   const $ = (id) => document.getElementById(id);
   const MAN = 1e4, EOK = 1e8;
   const KEY = 'rea-my-profile', LAST = 'rea-my-last', GEOC = 'rea-my-geo';
@@ -69,8 +69,25 @@
       <p class="muted">두 채 순자산 ${won(f.equity)} − 매도 중개보수 ${won(f.sellCosts)} − 양도세 ${won(f.cgt)} − 비상금 ${won(f.reserve)}${f.add ? ` + 추가 동원 ${won(f.add)}` : ''}${f.temp ? ` · 나중에 입주하면 그동안 살 집 전세금 ${won(f.temp)}을 빼고 ${won(f.cashDefer)}` : ''}</p>
       <p class="muted">매수할 때 취득세·중개보수·등기 비용(예: 서울 12억·전용 84㎡ 약 ${won(sample)})을 이 현금에서 먼저 내고, 남는 돈과 은행 대출로 집값을 냅니다.</p>`;
   }
+  // 찾을 지역(구)·주택 종류: 여러 개 고르기
+  const SEOUL_GU = P.REGIONS.filter((r) => r.group === '서울').map((r) => r.name.replace(/^서울 /, ''));
+  function renderScope() {
+    const el = $('scopePickers'); if (!el) return;
+    const st = market ? M.kindStatus() : {};
+    el.innerHTML = `<p class="muted">구 ${(profile.regions || []).length ? `${profile.regions.length}곳` : '(서울 전체)'}</p>
+      ${CH.html('p_regions', SEOUL_GU.map((g) => ({ value: g, label: g })), profile.regions || [], { presets: CH.SEOUL_GROUPS })}
+      <p class="muted">주택 종류</p>
+      ${CH.html('p_kinds', M.KINDS.map((k) => ({ value: k, label: k, note: st[k] && st[k] !== 'ok' ? (st[k] === '활용신청 필요' ? '데이터 신청 필요' : '데이터 없음') : '' })), M.kindsOf(profile))}`;
+  }
+  $('scopePickers') && $('scopePickers').addEventListener('click', (e) => {
+    const g = CH.toggle(e); if (!g) return;
+    if (g === 'p_regions') profile.regions = CH.values($('scopePickers'), 'p_regions');
+    if (g === 'p_kinds') { const ks = CH.values($('scopePickers'), 'p_kinds'); profile.kinds = ks.length ? ks : ['아파트']; }
+    save(KEY, profile); renderScope(); run(true);
+  });
   function renderForm() {
     renderFundsSum();
+    renderScope();
     for (const [k, t] of FIELDS) { const el = $('p_' + k); if (el) el.value = toView(profile[k], t); }
     $('p_saveRest').checked = profile.saveRest !== false;
     const homes = (profile.homes || []).length ? profile.homes : [{ name: '', value: 0, loan: 0, loanRate: 0.03, jeonse: 0 }];
@@ -172,7 +189,8 @@
       if (!market) { status('<p class="muted">서울 시장 데이터를 불러오는 중…</p>'); market = await M.load(); }
       const f = T.funds(profile);
       // 30년 넘은 단지에는 정비사업 단계와 주변 사례로 재건축 가능성·입주까지 기간이 붙어 있다
-      const all = M.prepare().all;
+      const all = M.scope(profile); // 내 기준의 찾을 지역·주택 종류만
+      renderScope();
       let evals = M.evaluateAll(profile, all);
       let res = T.classify(evals, profile, (x) => M.evaluateAll(profile, all, x));
       let enriched = false;
@@ -260,7 +278,8 @@
         <tr><td>노후 목표 (${p.targetAge}세, ${years}년 뒤)</td><td class="n">월 ${manw(p.retireNeed)} (현재 가치)</td></tr>
       </tbody></table></div>
       ${residenceHtml(f, planStats)}
-      <p class="muted">서울 단지·평형 ${res.considered.toLocaleString()}곳 중 면적·입지 기본 조건을 통과한 ${res.kept.toLocaleString()}곳을 평가 · ${enriched ? '상위 후보는 카카오 지도로 역·학교·상권 확인' : '카카오 REST 키가 없어 입지는 구 중심 추정 (매수 판단기 실거래가 탭에서 키 입력)'}${prevWeek ? ` · 지난 기록(${esc(prevWeek.week)}) 대비 변동 표시` : ''}</p>
+      <p class="muted">찾는 곳: ${(p.regions || []).length ? esc(p.regions.join('·')) : '서울 전체'} · ${esc(M.kindsOf(p).join('·'))}${M.kindsOf(p).some((k) => M.kindStatus()[k] !== 'ok') ? ` <span class="chip warning">${esc(M.kindsOf(p).filter((k) => M.kindStatus()[k] !== 'ok').join('·'))} 실거래 데이터 없음 (공공데이터포털 활용신청 필요)</span>` : ''}</p>
+      <p class="muted">단지·평형 ${res.considered.toLocaleString()}곳 중 면적·입지 기본 조건을 통과한 ${res.kept.toLocaleString()}곳을 평가 · ${enriched ? '상위 후보는 카카오 지도로 역·학교·상권 확인' : '카카오 REST 키가 없어 입지는 구 중심 추정 (매수 판단기 실거래가 탭에서 키 입력)'}${prevWeek ? ` · 지난 기록(${esc(prevWeek.week)}) 대비 변동 표시` : ''}</p>
       ${p.cgtReserve || p.cgtConfirmed ? '' : '<p class="demo-note"><span class="chip warning">확인</span> 매도 양도세 예상이 0원입니다. 취득가를 알면 \'내 기준\'에 넣어 주세요. 2주택 매도는 먼저 파는 집에 양도세가 나올 수 있습니다.</p>'}`;
 
     $('tierNav').innerHTML = tiers.map((t) => `<a href="#${t.id}" class="pill">${esc(t.rank)} <b>${t.items.length}</b></a>`).join('');
