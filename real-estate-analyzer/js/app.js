@@ -358,7 +358,9 @@
     const pick = window.REA_FUTURE && window.REA_FUTURE.pick;
     const [rid, name, dong, , kind] = pick ? String(pick.id).split('|') : [];
     let q;
-    if (pick && rid === c.i.regionId) q = !kind || kind === '빌라' ? `${c.r.name} ${name}` : `${c.r.name} ${dong}`;
+    // 빌라 이름은 '테헤란로대우아이빌(891-6)'처럼 지번이 붙어 카카오맵 이름 검색이 안 되므로 지번 주소(구 동 지번)로 찾는다
+    const parcel = ($('parcelAddress').value || '').trim();
+    if (pick && rid === c.i.regionId) q = !kind ? `${c.r.name} ${String(name).replace(/\s*\(.*\)\s*$/, '')}` : kind === '빌라' && /\d/.test(parcel) ? parcel : `${c.r.name} ${dong}`;
     else q = ($('parcelAddress').value || '').trim() || c.r.name;
     const label = pick && rid === c.i.regionId ? (kind === '단독주택' ? `${dong} 지도` : name) : q;
     return `<div class="row verdict-map"><a class="map-btn" href="https://map.kakao.com/?q=${encodeURIComponent(q)}" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.2c-4 0-7.2 3.1-7.2 7 0 5.2 7.2 12.6 7.2 12.6s7.2-7.4 7.2-12.6c0-3.9-3.2-7-7.2-7z" fill="#191919"/><circle cx="12" cy="9.3" r="2.8" fill="#fee500"/></svg>카카오맵에서 보기</a><span class="muted">${esc(label)}</span></div>`;

@@ -481,7 +481,9 @@
     const ret = T.retFor(t.rule, e);
     const ratio = x.value;
     const cautions = T.cautions(e, p);
-    const map = `https://map.kakao.com/?q=${encodeURIComponent(reg.name + ' ' + c.name)}`;
+    // 아파트는 단지 이름, 빌라는 지번 주소(이름에 '(891-6)' 같은 지번이 붙어 이름 검색이 안 됨), 단독주택은 동
+    const mapQ = c.kind === '빌라' && c.jibun ? `${reg.name} ${c.dong} ${c.jibun}` : c.kind && c.kind !== '아파트' ? `${reg.name} ${c.dong}` : `${reg.name} ${String(c.name).replace(/\s*\(.*\)\s*$/, '')}`;
+    const map = `https://map.kakao.com/?q=${encodeURIComponent(mapQ)}`;
     return `<div class="card reco-card">
       <div class="reco-head">
         <span class="rank">${k + 1}</span>
