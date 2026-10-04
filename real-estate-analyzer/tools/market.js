@@ -26,8 +26,8 @@ const asHouse = (body) => body.replace(/<item>([\s\S]*?)<\/item>/g, (m, it) => {
 });
 const KINDS = [
   { kind: '아파트', trade: API + 'RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade', rent: API + 'RTMSDataSvcAptRent/getRTMSDataSvcAptRent', history: true, prep: (b) => b },
-  { kind: '빌라', trade: API + 'RTMSDataSvcRHTrade/getRTMSDataSvcRHTrade', rent: null, history: false, prep: asApt('mhouseNm') },
-  { kind: '단독주택', trade: API + 'RTMSDataSvcSHTrade/getRTMSDataSvcSHTrade', rent: null, history: false, prep: asHouse },
+  { kind: '빌라', trade: API + 'RTMSDataSvcRHTrade/getRTMSDataSvcRHTrade', rent: API + 'RTMSDataSvcRHRent/getRTMSDataSvcRHRent', history: false, prep: asApt('mhouseNm') },
+  { kind: '단독주택', trade: API + 'RTMSDataSvcSHTrade/getRTMSDataSvcSHTrade', rent: API + 'RTMSDataSvcSHRent/getRTMSDataSvcSHRent', history: false, prep: asHouse },
 ];
 
 function get(url) {
@@ -97,7 +97,8 @@ async function build(key, now = new Date()) {
     }
     kinds[K.kind] = 'ok';
     const parseT = (b) => E.parseRtmsXml(K.prep(b)), parseR = (b) => E.parseRtmsRentXml(K.prep(b));
-    // 빌라·단독주택은 매매만 모은다 (서울 집 매수에 집중: 전월세는 쓰지 않음)
+    // 전월세: 서울 집을 세입자 낀 채 살 때 승계할 전세 시세. 활용신청이 안 돼 있으면 매매만 모은다
+    // (다가구 전월세는 방 단위라 건물 전체와 면적이 맞지 않아 전세 시세가 거의 붙지 않는다 → 세입자 없이 계산)
     let rentOk = !!K.rent;
     if (rentOk) try { await month(K.rent, key, regions[0].lawd, recent[0], parseR); calls++; } catch (err) { if (err.unregistered) rentOk = false; }
     await pool(regions.map((r) => async () => {
