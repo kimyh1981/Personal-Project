@@ -931,3 +931,5 @@ button.rule-rank:active { opacity: .75; }
 .q-item.q-current { outline: 2.5px solid var(--tint); outline-offset: -2px; }
 .q-item.q-flash { animation: qflash 1.2s ease-out; }
 @keyframes qflash { 0% { background: color-mix(in srgb, var(--tint) 30%, var(--group)); } 100% { background: var(--group); } }
+.verdict-map { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 10px 0 4px; }
+.verdict-map .muted { font-size: 13px; }

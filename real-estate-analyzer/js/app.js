@@ -350,6 +350,16 @@
   }
 
   // ── 렌더 ──────────────────────────────────────────────────────────────
+  // 카카오맵 바로가기 (내 맞춤 추천 카드와 같은 버튼): 내 조건으로 찾기에서 고른 단지면 단지 이름, 아니면 지번 주소·지역으로 찾는다
+  function mapLink(c) {
+    const pick = window.REA_FUTURE && window.REA_FUTURE.pick;
+    const [rid, name, dong, , kind] = pick ? String(pick.id).split('|') : [];
+    let q;
+    if (pick && rid === c.i.regionId) q = !kind || kind === '빌라' ? `${c.r.name} ${name}` : `${c.r.name} ${dong}`;
+    else q = ($('parcelAddress').value || '').trim() || c.r.name;
+    const label = pick && rid === c.i.regionId ? (kind === '단독주택' ? `${dong} 지도` : name) : q;
+    return `<div class="row verdict-map"><a class="map-btn" href="https://map.kakao.com/?q=${encodeURIComponent(q)}" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.2c-4 0-7.2 3.1-7.2 7 0 5.2 7.2 12.6 7.2 12.6s7.2-7.4 7.2-12.6c0-3.9-3.2-7-7.2-7z" fill="#191919"/><circle cx="12" cy="9.3" r="2.8" fill="#fee500"/></svg>카카오맵에서 보기</a><span class="muted">${esc(label)}</span></div>`;
+  }
   function renderVerdict(c) {
     const v = c.v;
     const el = $('verdict');
@@ -359,6 +369,7 @@
       <div>
         <h2>${esc(v.label)}</h2>
         <p class="sub">${esc(c.i.purpose)} · ${esc(c.r.name)} ${esc(c.i.propertyType)} · ${esc(won(c.i.price))} · 전용 ${c.i.areaM2}㎡ · ${c.i.years}년 ${c.livesIn ? '거주' : '보유'} 가정</p>
+        ${mapLink(c)}
         <ul class="checklist">${v.checks.map((k) => `<li>${chip(k.status)}<span>${esc(k.label)}</span><span class="d">${esc(k.detail)}</span></li>`).join('')}</ul>
         ${verdictExtras(c.assess)}
       </div>`;
