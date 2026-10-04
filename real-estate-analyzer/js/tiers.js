@@ -25,6 +25,7 @@
     homes: [], // [{ name, value, loan, loanRate, jeonse }]
     cgtReserve: 0, // 매도 양도세 예상 (원)
     cashReserve: 3000 * MAN, // 남겨 둘 비상금
+    extraFunds: 0, // 추가 동원 가능 자금 (예금·가족 지원 등). 서울 매수에 쓸 현금에 더한다
     annualIncome: 0, // 세전 연소득 (DSR 확인용, 0이면 미확인)
     pay: 300 * MAN, payMax: 350 * MAN, payPlusRatio: 1.5, payHigh: 1000 * MAN,
     loanRate: 0.04, plusRate: 0.05, // 새 주담대 금리, 추가 자금(개인 차입 등) 금리
@@ -56,9 +57,10 @@
     const homes = p.homes || [];
     const equity = homes.reduce((s, h) => s + (h.value || 0) - (h.loan || 0) - (h.jeonse || 0), 0);
     const sellCosts = homes.reduce((s, h) => s + (h.value ? E.brokerFee(h.value, 'sale', true) : 0), 0);
-    const cash = equity - sellCosts - (p.cgtReserve || 0) - (p.cashReserve || 0);
+    const add = Math.max(0, p.extraFunds || 0); // 추가로 동원할 수 있는 내 자금 (예금·가족 지원 등, 갚지 않는 돈)
+    const cash = equity - sellCosts - (p.cgtReserve || 0) - (p.cashReserve || 0) + add;
     const temp = p.tempHousing || 0;
-    return { equity, sellCosts, cgt: p.cgtReserve || 0, reserve: p.cashReserve || 0, cash, temp, cashDefer: cash - temp, extra: 0 };
+    return { equity, sellCosts, cgt: p.cgtReserve || 0, reserve: p.cashReserve || 0, add, cash, temp, cashDefer: cash - temp, extra: 0 };
   }
   // 순위별 내 여유자금(추가로 동원할 내 돈)을 더한 자금
   const withExtra = (f, extra) => (extra > 0 ? { ...f, extra, cash: f.cash + extra, cashDefer: f.cashDefer + extra } : f);

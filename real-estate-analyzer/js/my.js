@@ -53,7 +53,7 @@
 
   // ── 입력 폼 (화면은 만원·%, 저장은 원·비율) ────────────────────────────
   const FIELDS = [
-    ['cgtReserve', 'won'], ['cashReserve', 'won'], ['pay', 'won'], ['payMax', 'won'], ['payPlusRatio', 'num'], ['payHigh', 'won'],
+    ['cgtReserve', 'won'], ['cashReserve', 'won'], ['extraFunds', 'won'], ['pay', 'won'], ['payMax', 'won'], ['payPlusRatio', 'num'], ['payHigh', 'won'],
     ['annualIncome', 'won'], ['loanTerm', 'num'], ['loanRate', 'pct'], ['plusRate', 'pct'], ['name', 'text'], ['age', 'num'], ['targetAge', 'num'],
     ['retireNeed', 'won'], ['tempHousing', 'won'], ['deferMonths', 'num'], ['buyDate', 'text'], ['nohomeSince', 'text'], ['residence', 'text'], ['permitAfter', 'text'], ['rateType', 'text'], ['reconShareM2', 'won'], ['reconYears', 'num'], ['reconChance', 'pct'], ['postIncome', 'won'], ['downsizeHome', 'won'], ['growthAdjust', 'pct'], ['minArea', 'num'],
   ];
@@ -241,6 +241,7 @@
       <div class="tbl-wrap"><table><tbody>
         <tr><td>두 채 순자산 (시세 − 대출 − 전세)</td><td class="n">${won(f.equity)}</td></tr>
         <tr><td>− 매도 중개보수 · 양도세 예상 · 비상금</td><td class="n">${won(-(f.sellCosts + f.cgt + f.reserve))}</td></tr>
+        ${f.add ? `<tr><td>+ 추가 동원 가능 자금</td><td class="n">${won(f.add)}</td></tr>` : ''}
         <tr><td><b>서울 매수에 쓸 현금</b>${f.temp ? ' (바로 입주)' : ''}</td><td class="n"><b>${won(f.cash)}</b></td></tr>
         ${f.temp ? `<tr><td>나중에 입주: 그동안 살 집 전세금 ${won(f.temp)}을 빼고 지금 쓸 현금</td><td class="n">${won(f.cashDefer)}</td></tr>` : ''}
         <tr><td>월 상환 기본 / 최대 / 2순위 / 5순위</td><td class="n">${manw(p.pay)} / ${manw(p.payMax)} / ${manw(p.pay * p.payPlusRatio)} / ${manw(p.payHigh)}</td></tr>
