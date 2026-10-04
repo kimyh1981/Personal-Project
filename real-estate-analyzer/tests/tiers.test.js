@@ -182,3 +182,78 @@ test('노후 월소득: 집을 줄여 옮긴 차액 인출과 주택연금 중 �
   assert.ok(Math.abs(r.homeReal - real) < 1);
   assert.equal(Math.round(r.monthly), Math.round(Math.max((real - 5 * EOK) * 0.04 / 12, Math.min(real, 17 * EOK) * 0.0022)));
 });
+
+test('대출 한도: 금리 유형별 스트레스 반영비율, 한도를 정한 기준을 알려 준다', () => {
+  const p = profile({ annualIncome: 1 * EOK });
+  const periodic = T.bankLimit(15 * EOK, 'seoul-송파구', p, 30);
+  const variable = T.bankLimit(15 * EOK, 'seoul-송파구', { ...p, rateType: 'variable' }, 30);
+  assert.equal(periodic.rateType, 'periodic');
+  assert.ok(periodic.dsr > variable.dsr); // 주기형은 스트레스 금리를 40%만 반영
+  assert.equal(periodic.amount, 6 * EOK);
+  assert.match(periodic.by, /LTV|한도/);
+  assert.match(T.bankLimit(16 * EOK, 'seoul-송파구', p, 30).by, /4억/);
+});
+
+test('거주 계획: 토지거래허가 중에는 2026-05-12부터 계속 무주택이 아니면 입주를 미룰 수 없다', () => {
+  const p = profile({ residence: 'defer', tempHousing: 8000 * MAN, buyDate: '2026-11', annualIncome: 1 * EOK });
+  const f = T.funds(p);
+  assert.equal(f.cashDefer, f.cash - 8000 * MAN);
+  const e = T.evaluate(cand({ name: '갭', price: 12 * EOK, jeonse: 6 * EOK }), p, reg, f);
+  assert.equal(e.plan.mode, 'now');
+  assert.ok(e.plan.forced);
+  assert.match(e.plan.why, /2026-05-12/);
+  // 바로 입주로 계산할 때는 따로 살 집 전세금이 필요 없다
+  assert.equal(e.need, 12 * EOK + e.costs - f.cash);
+});
+
+test('거주 계획: 토지거래허가가 해제되면 전세 끼고 사서 미루는 동안 모은 돈 + 전세퇴거자금 대출(1억 한도)로 입주', () => {
+  const p = profile({ residence: 'defer', deferMonths: 24, tempHousing: 8000 * MAN, buyDate: '2027-03', permitAfter: 'lift', annualIncome: 1 * EOK, pay: 300 * MAN, cashReturn: 0 });
+  const f = T.funds(p);
+  const e = T.evaluate(cand({ name: '갭', price: 14 * EOK, jeonse: 8 * EOK }), p, reg, f);
+  assert.equal(e.plan.mode, 'defer');
+  assert.equal(e.plan.loanNow, 0); // 해제돼도 수도권 주담대는 6개월 전입의무 → 매수 때 대출 없이
+  const left = f.cashDefer - (14 * EOK + e.costs - 8 * EOK);
+  assert.equal(Math.round(e.plan.fundsAt), Math.round(8000 * MAN + left + 300 * MAN * 24));
+  assert.equal(Math.round(e.need), Math.round(8 * EOK - e.plan.fundsAt));
+  assert.ok(e.plan.loanLate <= 1 * EOK);
+  assert.equal(Math.round(e.plus), Math.round(Math.max(0, e.need - e.plan.loanLate)));
+  // 현금이 모자라면 바로 입주로
+  const tooBig = T.evaluate(cand({ name: '큰', price: 25 * EOK, jeonse: 8 * EOK }), p, reg, f);
+  assert.equal(tooBig.plan.mode, 'now');
+  assert.match(tooBig.plan.why, /더 필요/);
+  // 2026-05-12부터 계속 무주택이면 허가구역에서도 미룰 수 있다
+  const eligible = T.evaluate(cand({ name: '유예', price: 14 * EOK, jeonse: 8 * EOK }), { ...p, permitAfter: 'extend', buyDate: '2026-11', nohomeSince: '2025-01-01' }, reg, f);
+  assert.equal(eligible.plan.mode, 'defer');
+});
+
+test('메모 → 조건: 권역·구·동·가격·평형·연식·역세권을 읽고, 일반 문장은 조건으로 바꾸지 않는다', () => {
+  const d = ['대치동', '서초동', '잠실동', '목동'];
+  const a = T.parseMemo('강남3구 15억 이하 신축', d);
+  assert.deepEqual(a.gus.sort(), ['강남구', '서초구', '송파구']);
+  assert.equal(a.maxPrice, 15 * EOK);
+  assert.equal(a.maxAge, 10);
+  const b = T.parseMemo('서초동 30평대 역 7분', d);
+  assert.deepEqual(b.dongs, ['서초동']);
+  assert.deepEqual(b.gus, []); // '서초동'의 '서초'를 서초구로 읽지 않는다
+  assert.ok(b.minArea >= 74 && b.maxArea <= 102);
+  assert.equal(b.maxSubway, 7);
+  const c = T.parseMemo('대출 상환 능력 안에서 · 바로 입주 · 60세 노후 준비 · 재건축 기대 반영 · 월 300만원', d);
+  assert.deepEqual(c.labels, []);
+  assert.equal(T.parseMemo('10~14억 마용성', d).minPrice, 10 * EOK);
+});
+
+test('메모 지역 조건: 그 지역에 추천이 없으면 같은 조건으로 추천이 나오는 구·동을 안내', () => {
+  const p = profile({ tierRules: { t3: { comment: '강남구' } } });
+  const f = T.funds(p);
+  const cs = [
+    cand({ name: '송파A', price: 7 * EOK }), cand({ name: '송파B', price: 7.5 * EOK, dong: '가락동' }),
+    cand({ name: '강남C', price: 30 * EOK, regionId: 'seoul-강남구', dong: '대치동' }),
+  ];
+  const res = T.classify(cs.map((c) => T.evaluate(c, p, reg, f)), p);
+  const t3 = res.tiers.find((t) => t.id === 't3');
+  assert.deepEqual(t3.memo.gus, ['강남구']);
+  assert.equal(t3.items.length, 0);
+  assert.equal(t3.regionAlt[0].gu, '송파구');
+  assert.equal(t3.regionAlt[0].n, 2);
+  assert.deepEqual(t3.regionAlt[0].dongs.map((x) => x.dong).sort(), ['가락동', '잠실동']);
+});

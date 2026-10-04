@@ -44,6 +44,32 @@
           <label class="f">매도 양도세 예상 <span class="unit">만원</span><input id="p_cgtReserve" type="number" step="100"></label>
           <label class="f">남겨 둘 비상금 <span class="unit">만원</span><input id="p_cashReserve" type="number" step="100"></label>
         </fieldset>
+        <fieldset data-footer="서울 아파트는 토지거래허가구역이라 허가 후 4개월 안에 입주해야 합니다. 세입자 있는 집의 입주 유예는 2026-05-12부터 계속 무주택인 사람만 받을 수 있어, 자격이 없으면 '나중에 입주'를 골라도 바로 입주로 계산하고 이유를 보여 줍니다.">
+          <legend><span>거주 계획 · 매수 시기</span></legend>
+          <label class="f">거주 계획
+            <select id="p_residence">
+              <option value="now">바로 입주</option>
+              <option value="defer">세입자 두고 나중에 입주</option>
+            </select>
+          </label>
+          <label class="f">입주까지 <span class="unit">개월 · 나중에 입주일 때</span><input id="p_deferMonths" type="number" step="1" min="1" max="48"></label>
+          <label class="f">그동안 살 집 전세금 <span class="unit">만원 · 입주할 때 돌려받음</span><input id="p_tempHousing" type="number" step="100"></label>
+          <label class="f">매수 시기 <span class="unit">비우면 이번 달</span><input id="p_buyDate" type="month"></label>
+          <label class="f">계속 무주택 시작일 <span class="unit">집을 보유 중이면 비움</span><input id="p_nohomeSince" type="date"></label>
+          <label class="f">토지거래허가 기간(2026-12-31) 뒤
+            <select id="p_permitAfter">
+              <option value="extend">연장된다고 보기</option>
+              <option value="lift">해제된다고 보기</option>
+            </select>
+          </label>
+          <label class="f">주담대 금리 유형
+            <select id="p_rateType">
+              <option value="periodic">주기형 (한도 가장 큼)</option>
+              <option value="mixed">혼합형</option>
+              <option value="variable">변동형</option>
+            </select>
+          </label>
+        </fieldset>
         <fieldset data-footer="1순위는 기본 한도, 최대 한도까지 허용. 2순위는 기본 한도의 비율까지. 5순위는 고소득 한도. 월 상환은 대출 만기 기준 원리금입니다.">
           <legend><span>상환 능력</span></legend>
           <label class="f">월 상환 기본 <span class="unit">만원</span><input id="p_pay" type="number" step="10"></label>
@@ -87,6 +113,7 @@
 <script src="js/geo.js"></script>
 <script src="js/conditions.js"></script>
 <script src="js/tiers.js"></script>
+<script src="js/mymarket.js"></script>
 <script src="js/my.js"></script>
 </body>
 </html>

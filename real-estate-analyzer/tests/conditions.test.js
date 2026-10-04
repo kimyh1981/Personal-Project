@@ -136,3 +136,23 @@ test('필수 조건: 월 실수령액·고용 형태', () => {
   const miss = C.missing(base({ netMonthlyIncome: null, employment: null })).map((r) => r.path);
   assert.ok(miss.includes('netMonthlyIncome') && miss.includes('employment'));
 });
+
+test('실거주 판정: 세입자 있는 집 입주 유예는 2026-05-12부터 계속 무주택인 사람만', () => {
+  const base = { regionId: 'seoul-마포구', tenant: true, buyDate: '2026-11' };
+  const owner = C.residenceRule({ ...base, nohomeSince: '' });
+  assert.equal(owner.permit, true);
+  assert.equal(owner.deferOK, false);
+  assert.match(owner.why, /2026-05-12/);
+  const late = C.residenceRule({ ...base, nohomeSince: '2026-06-01' }); // 발표 뒤에 집을 팔아 무주택이 된 경우
+  assert.equal(late.deferOK, false);
+  const ok = C.residenceRule({ ...base, nohomeSince: '2024-03-01' });
+  assert.equal(ok.deferOK, true);
+  assert.equal(ok.loanMoveIn, false); // 허가 대상 주택 주담대는 전입의무 미적용
+  assert.equal(C.residenceRule({ ...base, nohomeSince: '2024-03-01', buyDate: '2028-02' }).deferOK, false); // 신청 기한 2027-12-31
+  const lifted = C.residenceRule({ ...base, buyDate: '2027-02', permitAfter: 'lift' });
+  assert.equal(lifted.permit, false);
+  assert.equal(lifted.deferOK, true);
+  assert.equal(lifted.loanMoveIn, true); // 해제돼도 규제지역 주담대 6개월 전입의무
+  assert.equal(C.residenceRule({ ...base, buyDate: '2027-02', permitAfter: 'extend' }).permit, true);
+  assert.equal(C.residenceRule({ ...base, propertyType: '빌라' }).permit, false);
+});

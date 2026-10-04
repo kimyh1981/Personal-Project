@@ -3,7 +3,7 @@
  * 처음 설정: my.html#setup=<base64url JSON> 링크로 열면 조건을 저장하고 주소에서 지운다 (서버로 전송되지 않음).
  */
 (function () {
-  const E = window.REA, P = window.REA_POLICY, T = window.REA_TIERS, GEO = window.REA_GEO;
+  const E = window.REA, P = window.REA_POLICY, T = window.REA_TIERS, GEO = window.REA_GEO, COND = window.REA_COND;
   const $ = (id) => document.getElementById(id);
   const MAN = 1e4, EOK = 1e8;
   const KEY = 'rea-my-profile', LAST = 'rea-my-last', GEOC = 'rea-my-geo';
@@ -41,19 +41,21 @@
     if (e.target.id !== 'setupApply') return;
     const p = decodeSetup($('setupPaste').value);
     if (!p) { $('setupMsg').textContent = '링크를 읽지 못했습니다. 링크 전체를 그대로 붙여넣어 주세요.'; return; }
-    profile = { ...T.DEFAULTS, ...p }; save(KEY, profile);
+    profile = { ...T.DEFAULTS, ...keepLocal(profile), ...p }; save(KEY, profile);
     renderForm(); run(true);
   });
+  // 설정 링크에 없는 순위 메모·조건과 단지별 재건축 가정은 이 기기에 있던 것을 지킨다
+  const keepLocal = (p) => Object.fromEntries(['tierRules', 'reconOverrides'].filter((k) => p && p[k]).map((k) => [k, p[k]]));
   let profile = { ...T.DEFAULTS, ...(load(KEY, {})) };
   const fromLink = readSetupHash();
-  if (fromLink) { profile = { ...T.DEFAULTS, ...fromLink }; save(KEY, profile); }
+  if (fromLink) { profile = { ...T.DEFAULTS, ...keepLocal(profile), ...fromLink }; save(KEY, profile); }
   const hasProfile = () => (profile.homes || []).length > 0;
 
   // ── 입력 폼 (화면은 만원·%, 저장은 원·비율) ────────────────────────────
   const FIELDS = [
     ['cgtReserve', 'won'], ['cashReserve', 'won'], ['pay', 'won'], ['payMax', 'won'], ['payPlusRatio', 'num'], ['payHigh', 'won'],
     ['annualIncome', 'won'], ['loanTerm', 'num'], ['loanRate', 'pct'], ['plusRate', 'pct'], ['name', 'text'], ['age', 'num'], ['targetAge', 'num'],
-    ['retireNeed', 'won'], ['reconShareM2', 'won'], ['reconYears', 'num'], ['reconChance', 'pct'], ['postIncome', 'won'], ['downsizeHome', 'won'], ['growthAdjust', 'pct'], ['minArea', 'num'],
+    ['retireNeed', 'won'], ['tempHousing', 'won'], ['deferMonths', 'num'], ['buyDate', 'text'], ['nohomeSince', 'text'], ['residence', 'text'], ['permitAfter', 'text'], ['rateType', 'text'], ['reconShareM2', 'won'], ['reconYears', 'num'], ['reconChance', 'pct'], ['postIncome', 'won'], ['downsizeHome', 'won'], ['growthAdjust', 'pct'], ['minArea', 'num'],
   ];
   const toView = (v, t) => (t === 'won' ? (v ? Math.round(v / MAN) : '') : t === 'pct' ? +(v * 100).toFixed(2) : v ?? '');
   const fromView = (s, t) => (t === 'text' ? s : t === 'won' ? (Number(s) || 0) * MAN : t === 'pct' ? (Number(s) || 0) / 100 : Number(s) || 0);
@@ -91,26 +93,8 @@
   });
 
   // ── 시장 데이터 ─────────────────────────────────────────────────────
+  const M = window.REA_MYMARKET;
   let market = null;
-  async function loadMarket() {
-    const r = await fetch('data/market-seoul.json', { cache: 'no-store' });
-    if (!r.ok) throw new Error('서울 시장 데이터가 아직 없습니다 (매주 자동 수집)');
-    market = await r.json();
-    // 서울 정비사업 단계 (정비사업 정보몽땅, 6시간마다 수집). 없으면 단계 없이 계산
-    try {
-      const q = await fetch('data/redev-seoul.json', { cache: 'no-store' });
-      if (q.ok) redevSnap = await q.json();
-    } catch (_) { /* 무시 */ }
-    return market;
-  }
-  let redevSnap = null;
-  function candidates() {
-    const cols = market.cols;
-    return market.cands.map((row) => {
-      const o = Object.fromEntries(cols.map((c, i) => [c, row[i]]));
-      return { id: `${o.r}|${o.n}|${o.d}|${Math.round(o.a)}`, regionId: o.r, name: o.n, dong: o.d, jibun: o.j, area: o.a, price: o.p, jeonse: o.je, count: o.c, builtYear: o.y, g5: o.g5, g10: o.g10 };
-    });
-  }
 
   // ── 카카오로 좌표·역·학교·상권 (카카오 REST 키가 있으면, 30일 캐시) ─────────
   async function kakao(path) {
@@ -173,16 +157,11 @@
     const status = (t) => { $('myStatus').innerHTML = t; };
     try {
       if (!hasProfile()) { renderEmpty(); return; }
-      if (!market) { status('<p class="muted">서울 시장 데이터를 불러오는 중…</p>'); await loadMarket(); }
+      if (!market) { status('<p class="muted">서울 시장 데이터를 불러오는 중…</p>'); market = await M.load(); }
       const f = T.funds(profile);
-      const all = candidates();
-      const dongs = T.dongIndex(all);
-      // 30년 넘은 단지: 정비사업 단계와 주변 사례로 재건축 가능성·입주까지 기간을 붙인다
-      if (redevSnap) {
-        const ri = T.redevIndex(redevSnap), og = T.oldRegisteredByGu(all, ri), yr = new Date().getFullYear();
-        for (const c of all) if (c.builtYear && yr - c.builtYear >= 30) c.redev = T.redevChance(c, ri, og);
-      }
-      let evals = all.map((c) => T.evaluate(c, profile, market.regions[c.regionId], f, dongs.get(c.regionId + '|' + c.dong)));
+      // 30년 넘은 단지에는 정비사업 단계와 주변 사례로 재건축 가능성·입주까지 기간이 붙어 있다
+      const all = M.prepare().all;
+      let evals = M.evaluateAll(profile, all);
       let res = T.classify(evals, profile);
       let enriched = false;
       if (withEnrich) {
@@ -190,14 +169,16 @@
         for (let round = 0; round < 2; round++) {
           const short = [...new Set(T.topN(res, 8).flatMap((t) => t.items.map((x) => x.e.c)))];
           enriched = await enrich(short, (t) => status(`<p class="muted">${round ? '새로 올라온 후보 ' : ''}${esc(t)}</p>`));
-          evals = all.map((c) => T.evaluate(c, profile, market.regions[c.regionId], f, dongs.get(c.regionId + '|' + c.dong)));
+          evals = M.evaluateAll(profile, all);
           res = T.classify(evals, profile);
           if (!enriched) break;
         }
       }
       const tiers = T.topN(res, 5);
-      render(f, res, tiers, enriched);
-      renderRules(res);
+      const planStats = { defer: 0, forced: 0, why: '' };
+      for (const e of evals) { if (e.plan.mode === 'defer') planStats.defer++; else if (e.plan.forced) { planStats.forced++; planStats.why = planStats.why || e.plan.why; } }
+      render(f, res, tiers, enriched, planStats);
+      renderRules(res, T.topN(res, 10));
     } catch (err) {
       status(`<p>${esc(err.message)}</p>`);
     } finally {
@@ -224,7 +205,31 @@
     return '';
   }
 
-  function render(f, res, tiers, enriched) {
+  // 거주 계획·대출 기준 설명 (매수 시기 기준 서울 아파트)
+  function residenceHtml(f, planStats) {
+    const p = profile, RS = P.RESIDENCE;
+    const buy = p.buyDate || new Date().toISOString().slice(0, 7);
+    const defer = p.residence === 'defer';
+    const rr = COND.residenceRule({ regionId: 'seoul-강남구', buyDate: buy, nohomeSince: p.nohomeSince, tenant: defer, permitAfter: p.permitAfter });
+    const b = T.bankLimit(10 * EOK, 'seoul-강남구', p, Math.max(p.targetAge - p.age, p.loanTerm || 30));
+    const plan = defer ? `세입자 두고 ${p.deferMonths}개월 뒤 입주` : '바로 입주';
+    let verdict = '';
+    if (defer) {
+      verdict = rr.deferOK
+        ? `<p><span class="chip good">가능</span> ${esc(rr.why)}</p><p class="muted">수도권·규제지역 주담대는 6개월 안에 전입해야 해서, 나중에 입주하려면 매수 때 대출 없이 세입자 전세보증금을 안고 삽니다. 입주할 때 돌려줄 전세금은 그동안 살 집 전세금 + 남은 현금 + 그동안 모은 돈(월 ${manw(p.pay)})으로 내고, 모자라면 전세퇴거자금 대출(수도권 1주택자 ${won(RS.jeonseReturnCap)} 한도)과 추가 자금으로 채웁니다.</p>`
+        : `<p><span class="chip critical">불가</span> ${esc(rr.why)}</p>
+           <p class="muted">그래서 모든 단지를 <b>바로 입주</b>로 계산했습니다 (그동안 살 집 전세금 ${won(f.temp)}은 필요 없다고 보고 매수 자금에 넣음). 나중에 입주가 가능해지는 경우: 서울 아파트 토지거래허가가 ${RS.landPermitUntil}에 끝나 해제된 뒤 매수 — 아래 '내 기준'에서 매수 시기를 2027년 이후로, 허가 기간 뒤를 '해제된다고 보기'로 바꾸면 계산합니다 (연장 여부는 아직 정해지지 않음).</p>`;
+      if (rr.deferOK && planStats) verdict += `<p class="muted">이번 주 후보 중 ${planStats.defer.toLocaleString()}곳은 나중에 입주로, ${planStats.forced.toLocaleString()}곳은 바로 입주로 계산했습니다 (전세 시세가 없거나 지금 현금이 모자란 곳).</p>`;
+    } else if (rr.permit) verdict = `<p class="muted">${esc(rr.why)}</p>`;
+    return `<div class="residence-box">
+      <h4>거주 계획 · ${esc(plan)} · 매수 ${esc(buy)}</h4>
+      ${verdict}
+      <p class="muted">대출 한도: 무주택(두 채 매도 후) LTV ${Math.round(b.ltvRate * 100)}% · 주택가격별 한도 15억 이하 6억 / 25억 이하 4억 / 초과 2억 · 스트레스 DSR 40% (${esc(P.LOAN.rateTypeLabel[b.rateType])}, 스트레스 금리 +${(b.stress * 100).toFixed(1)}%p${b.dsrChecked ? `, 연소득 ${won(p.annualIncome)} → DSR 한도 약 ${won(b.dsr)}` : ', 연소득을 넣으면 확인'}). 셋 중 가장 작은 값이 한도입니다.</p>
+      <p class="links">출처: ${RS.sources.map((x) => `<a href="${x.url}" target="_blank" rel="noopener">${esc(x.label)}</a>`).join(' · ')}</p>
+    </div>`;
+  }
+
+  function render(f, res, tiers, enriched, planStats) {
     const p = profile;
     $('myTitle').textContent = p.name ? `${p.name} 님 맞춤 추천` : '내 맞춤 추천';
     const years = p.targetAge - p.age;
@@ -236,10 +241,12 @@
       <div class="tbl-wrap"><table><tbody>
         <tr><td>두 채 순자산 (시세 − 대출 − 전세)</td><td class="n">${won(f.equity)}</td></tr>
         <tr><td>− 매도 중개보수 · 양도세 예상 · 비상금</td><td class="n">${won(-(f.sellCosts + f.cgt + f.reserve))}</td></tr>
-        <tr><td><b>서울 매수에 쓸 현금</b></td><td class="n"><b>${won(f.cash)}</b></td></tr>
+        <tr><td><b>서울 매수에 쓸 현금</b>${f.temp ? ' (바로 입주)' : ''}</td><td class="n"><b>${won(f.cash)}</b></td></tr>
+        ${f.temp ? `<tr><td>나중에 입주: 그동안 살 집 전세금 ${won(f.temp)}을 빼고 지금 쓸 현금</td><td class="n">${won(f.cashDefer)}</td></tr>` : ''}
         <tr><td>월 상환 기본 / 최대 / 2순위 / 5순위</td><td class="n">${manw(p.pay)} / ${manw(p.payMax)} / ${manw(p.pay * p.payPlusRatio)} / ${manw(p.payHigh)}</td></tr>
         <tr><td>노후 목표 (${p.targetAge}세, ${years}년 뒤)</td><td class="n">월 ${manw(p.retireNeed)} (현재 가치)</td></tr>
       </tbody></table></div>
+      ${residenceHtml(f, planStats)}
       <p class="muted">서울 단지·평형 ${res.considered.toLocaleString()}곳 중 면적·입지 기본 조건을 통과한 ${res.kept.toLocaleString()}곳을 평가 · ${enriched ? '상위 후보는 카카오 지도로 역·학교·상권 확인' : '카카오 REST 키가 없어 입지는 구 중심 추정 (매수 판단기 실거래가 탭에서 키 입력)'}${prevWeek ? ` · 지난 기록(${esc(prevWeek.week)}) 대비 변동 표시` : ''}</p>
       ${p.cgtReserve || p.cgtConfirmed ? '' : '<p class="demo-note"><span class="chip warning">확인</span> 매도 양도세 예상이 0원입니다. 취득가를 알면 \'내 기준\'에 넣어 주세요. 2주택 매도는 먼저 파는 집에 양도세가 나올 수 있습니다.</p>'}`;
 
@@ -255,8 +262,19 @@
     if (!last || last.week !== week) { if (last) save(LAST + '-prev', last); save(LAST, snap); } else save(LAST, snap);
   }
 
+  // 메모의 지역으로 추천이 없을 때: 같은 조건으로 추천이 나오는 구·동
+  function regionAltHtml(t) {
+    if (!t.regionAlt) return '';
+    const where = [...t.memo.gus, ...t.memo.dongs].join('·');
+    if (!t.regionAlt.length) return `<div class="region-alt"><p><b>${esc(where)}</b>에서는 이 조건으로 추천할 곳이 없고, 지역을 빼도 이번 주에는 없습니다.</p></div>`;
+    return `<div class="region-alt"><p><b>${esc(where)}</b>에서는 이번 주 이 조건으로 추천할 곳이 없습니다. 같은 조건으로 추천이 나오는 곳:</p>
+      <ul class="plain">${t.regionAlt.map((g) => `<li><b>${esc(g.gu)}</b> ${g.n}곳 — ${g.dongs.map((d) => `${esc(d.dong)} ${d.n}`).join(', ')}</li>`).join('')}</ul>
+      <p class="muted">메모의 지역을 바꾸거나, 그대로 두면 이 지역에서 조건에 맞는 곳이 나올 때 추천합니다 (매주 다시 계산).</p></div>`;
+  }
+
   function emptyCard(t) {
     const n = t.nearest;
+    if (t.regionAlt) return `<div class="card">${regionAltHtml(t)}</div>`;
     return `<div class="card"><p>이번 주 조건에 맞는 곳이 없습니다.</p>
       ${n ? `<p class="muted">노후 기준만 빼면 가장 가까운 곳: ${esc(E.region(n.regionId).name)} ${esc(n.name)} (${won(n.price)}) — 노후 월소득 ${manw(n.monthly)}, 목표의 ${Math.round(n.value * 100)}%</p>` : '<p class="muted">자금·상환 조건을 만족하는 단지 자체가 없습니다.</p>'}
     </div>`;
@@ -271,7 +289,7 @@
     const maxKeep = cashSellOne / (1 + 0.08 + 0.004 + 0.012); // 2주택 취득세 8%·지방교육세·중개·등기, 규제지역 2주택 대출 0
     return `<div class="card"><h3>검토했지만 뺀 조합</h3><ul class="plain">
       <li><b>${esc(keep.name || '한 채')} 유지 + 서울 1채 (2주택)</b>: 서울은 규제지역이라 2주택자 주담대가 0원이고 취득세가 8%로 무거워, 쓸 수 있는 현금 ${won(cashSellOne)}로 살 수 있는 서울 집이 약 ${won(maxKeep)} 이하입니다. 1순위보다 입지·미래가치가 낮아 뺐습니다.</li>
-      <li><b>서울 전세 낀 매수 (갭)</b>: 서울 아파트는 토지거래허가구역이라 허가 후 2년 실거주 의무가 있어 불가합니다. 입주를 늦추려면 재건축 연한 단지를 사서 살다가 이주하는 방식(2순위·추가 A)만 가능합니다.</li>
+      <li><b>서울 전세 낀 매수 (나중에 입주)</b>: 서울 아파트는 토지거래허가구역(${P.RESIDENCE.landPermitUntil}까지)이라 허가 후 ${P.RESIDENCE.registerMonths}개월 안에 입주해야 합니다. 세입자 있는 집의 입주 유예는 ${P.RESIDENCE.defer.nohomeSince}부터 계속 무주택인 사람만 받을 수 있어, 지금 집을 가진 상태에서는 해당되지 않습니다. 허가가 해제된 뒤라면 매수 때 대출 없이 전세보증금을 안고 사는 방식으로 가능합니다 ('거주 계획'에서 계산).</li>
       <li><b>서울 먼저 사고 나중에 팔기 (일시적 2주택)</b>: 처분 조건부 대출도 LTV 40%라 한도는 같고, 기한 안에 못 팔면 대출 회수·양도세 위험이 있습니다. 순위는 같고 매도 순서만 다릅니다.</li>
     </ul></div>`;
   }
@@ -322,18 +340,30 @@
 
   // ── 나의 순위 조건: 메모(내가 적은 문장)와 실제 계산에 쓰는 조건 ─────────────
   const LOAN_LABEL = { none: '대출 없이', bank: '은행 대출만', plus: '은행 + 추가 자금', need: '대출 필요 (방식 무관)', any: '상관없음' };
-  function renderRules(res) {
+  let openRank = null; // 순위를 누르면 바로 아래에 그 순위 추천 목록
+  function miniList(t) {
+    if (!t.items.length) return regionAltHtml(t) || '<p class="muted">이번 주 이 조건에 맞는 곳이 없습니다.</p>';
+    return `<ol class="mini-reco">${t.items.map((x, k) => {
+      const e = x.e, c = x.e.c;
+      return `<li><a href="#${t.id}" data-goto="${t.id}"><span class="rank">${k + 1}</span><span class="mr-name"><b>${esc(c.name)}</b> <span class="muted">${esc(E.region(c.regionId).name.replace(/^서울 /, ''))} ${esc(c.dong)} · 전용 ${c.area}㎡</span></span>
+        <span class="mr-num">${won(c.price)} · ${e.loan + e.plus > 0 ? `월 ${manw(e.payTotal)}` : '대출 없음'} · 노후 ${Math.round(x.value * 100)}% · ${x.score}점</span></a></li>`;
+    }).join('')}</ol>`;
+  }
+  function renderRules(res, tiers10) {
     const R = T.rulesFor(profile);
     const box = $('tierRules');
     box.hidden = false;
     box.innerHTML = `<h3>나의 순위 조건</h3>
-      <p class="muted">왼쪽 순위마다 내가 정한 조건을 적어 두고, 아래 칸으로 실제 계산 조건을 바꿉니다. 바꾸면 서울 전체 후보를 다시 평가하고, 새로 올라온 후보는 입지를 다시 확인합니다. 바꾼 순위는 주황색으로 표시됩니다.</p>
+      <p class="muted">순위마다 메모에 원하는 조건을 적으면 지역(구·동·강남3구 등)·가격(15억 이하)·평형(30평대)·연식(신축·준공 15년 이내)·역세권을 읽어 추천 조건으로 씁니다. 아래 칸으로 대출 방식·월 상환·노후 목표를 바꿉니다. 순위 버튼을 누르면 그 순위 추천이 바로 아래에 나옵니다.</p>
       ${T.TIERS.map((t) => {
-        const r = R[t.id], n = (res.tiers.find((x) => x.id === t.id) || { items: [] }).items.length;
-        return `<div class="rule-row" data-rule="${t.id}">
-          <span class="rule-rank${r.custom ? ' custom' : ''}">${esc(t.rank)}</span>
+        const r = R[t.id], full = res.tiers.find((x) => x.id === t.id) || { items: [], memo: { labels: [] } };
+        const shown = (tiers10 || []).find((x) => x.id === t.id) || full;
+        const n = full.items.length, open = openRank === t.id;
+        return `<div class="rule-row${open ? ' open' : ''}" data-rule="${t.id}">
+          <button type="button" class="rule-rank${r.custom ? ' custom' : ''}" data-rank-toggle aria-expanded="${open}">${esc(t.rank)}<small>${n.toLocaleString()}</small></button>
           <div class="rule-body">
             <textarea data-rk="comment" rows="2" placeholder="${esc(t.title)}">${esc(r.comment)}</textarea>
+            ${full.memo.labels.length ? `<div class="memo-chips"><span class="muted">메모에서 읽은 조건</span>${full.memo.labels.map((l) => `<span class="chip">${esc(l)}</span>`).join('')}</div>` : ''}
             <div class="rule-ctl">
               <label>대출<select data-rk="loan">${Object.entries(LOAN_LABEL).map(([k, v]) => `<option value="${k}"${r.loan === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
               <label>월 상환 한도 (만원)<input type="number" step="10" min="0" data-rk="pay" value="${r.pay == null ? '' : Math.round(r.pay / MAN)}" placeholder="제한 없음"></label>
@@ -341,11 +371,14 @@
               <span class="chk"><input type="checkbox" data-rk="recon"${r.recon ? ' checked' : ''} id="rc-${t.id}"><label for="rc-${t.id}" style="display:inline;color:inherit;font-size:13px">재건축 기대 반영</label></span>
               ${r.custom ? '<button type="button" class="reset" data-rule-reset>기본값</button>' : ''}
             </div>
-            <span class="rule-count">이번 주 조건에 맞는 곳 ${n.toLocaleString()}곳</span>
+            <span class="rule-count">이번 주 조건에 맞는 곳 ${n.toLocaleString()}곳${full.regionAlt ? ' · 지역 조건 때문에 없음' : ''}</span>
           </div>
+          <div class="rule-list"${open ? '' : ' hidden'}>${open ? miniList(shown) : ''}</div>
         </div>`;
       }).join('')}`;
+    lastRules = { res, tiers10 };
   }
+  let lastRules = null;
   // 메모 칸은 글 길이에 맞춰 높이를 늘린다
   const grow = (ta) => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 2 + 'px'; };
   $('tierRules').addEventListener('input', (e) => { if (e.target.matches('textarea')) grow(e.target); });
@@ -370,10 +403,16 @@
     const v = ruleValue(k, el);
     if (v === undefined) delete o[k]; else o[k] = v;
     all[id] = o; profile.tierRules = all; save(KEY, profile);
-    if (k === 'comment') return; // 메모는 계산에 쓰지 않는다
-    run(true); // 조건이 바뀌면 전체 재평가 + 새 후보 입지 확인
+    run(true); // 조건이나 메모(지역·가격 등)가 바뀌면 전체 재평가 + 새 후보 입지 확인
   });
   $('tierRules').addEventListener('click', (e) => {
+    const tg = e.target.closest('[data-rank-toggle]');
+    if (tg) {
+      const id = tg.closest('[data-rule]').dataset.rule;
+      openRank = openRank === id ? null : id;
+      if (lastRules) renderRules(lastRules.res, lastRules.tiers10);
+      return;
+    }
     if (!e.target.closest('[data-rule-reset]')) return;
     const id = e.target.closest('[data-rule]').dataset.rule;
     const all = { ...(profile.tierRules || {}) }, keep = all[id] && all[id].comment ? { comment: all[id].comment } : null;
@@ -400,8 +439,10 @@
       <div class="tbl-wrap"><table><tbody>
         <tr><td>실거래 중위</td><td class="n">${won(c.price)}${c.jeonse ? ` · 전세 ${won(c.jeonse)}` : ''}</td></tr>
         <tr><td>취득 비용 (세금·중개·등기)</td><td class="n">${won(e.costs)}</td></tr>
-        ${e.need > 0 ? `<tr><td>은행 대출 / 추가 자금</td><td class="n">${won(e.loan)}${e.plus ? ` / ${won(e.plus)}` : ''}</td></tr>
-        <tr><td>월 상환 (${e.term}년 만기)</td><td class="n">${manw(e.payTotal)}</td></tr>
+        ${e.plan.mode === 'defer' ? `<tr><td>거주 계획: 세입자 두고 ${e.plan.startMonths}개월 뒤 입주</td><td class="n">지금 현금 ${won(e.plan.cashNow)} (전세 ${won(e.plan.J)} 안고 매수${e.plan.loanNow ? ` · 대출 ${won(e.plan.loanNow)}` : ''})</td></tr>
+        <tr><td>입주 때 전세금 ${won(e.plan.J)} 돌려주기</td><td class="n">모은 돈 ${won(Math.min(e.plan.fundsAt, e.plan.J))}${e.plan.loanLate ? ` + 전세퇴거자금 대출 ${won(e.plan.loanLate)}` : ''}${e.plus ? ` + 추가 자금 ${won(e.plus)}` : ''}</td></tr>` : ''}
+        ${e.loan + e.plus > 0 ? `<tr><td>${e.plan.mode === 'defer' ? '대출 합계 / 추가 자금' : '은행 대출 / 추가 자금'}</td><td class="n">${won(e.loan)}${e.plus ? ` / ${won(e.plus)}` : ''}${e.plan.mode === 'now' && e.loan ? ` <span class="muted">(한도 ${won(e.bank.amount)} · ${esc(e.bank.by)})</span>` : ''}</td></tr>
+        <tr><td>월 상환 (${e.term}년 만기${e.plan.mode === 'defer' ? ', 입주 뒤부터' : ''})</td><td class="n">${manw(e.payTotal)}</td></tr>
         ${e.debt60 > 0 ? `<tr><td>${p.targetAge}세에 남는 대출 (집 팔아 상환)</td><td class="n">${won(e.debt60)}</td></tr>` : ''}` : `<tr><td>대출 없이 남는 돈</td><td class="n">${won(e.leftover)}</td></tr>`}
         ${e.saveMonthly > 0 ? `<tr><td>상환 여유분 저축 (월 ${manw(e.saveMonthly)}, 연 ${pct(p.cashReturn, 1)})</td><td class="n">${p.targetAge}세 ${won(e.save60)}</td></tr>` : ''}
         <tr><td>예상 연 상승률 (${esc(e.growth.basis)}${useRecon && e.recon && !e.rebuild ? ' + 재건축 0.7%p' : ''})</td><td class="n">${pct(useRecon ? e.gRecon : e.growth.g)}</td></tr>
@@ -420,7 +461,9 @@
 
   $('myMethod').innerHTML = [
     '두 채를 모두 판 순자산에서 매도 중개보수·양도세 예상·비상금을 빼고, 서울 아파트 취득 비용(취득세·중개보수·등기)을 더해 모자라는 돈을 계산합니다.',
-    '은행 대출은 서울(규제지역) 무주택 기준 LTV 40%, 주택가격별 한도(15억 이하 6억 · 25억 이하 4억 · 초과 2억), 연소득을 넣으면 스트레스 DSR(대출 만기 기준)까지 적용합니다.',
+    '은행 대출은 서울(규제지역) 무주택 기준 LTV 40%, 주택가격별 한도(15억 이하 6억 · 25억 이하 4억 · 초과 2억), 연소득을 넣으면 스트레스 DSR(수도권 하한 3%p × 금리 유형 반영비율, 기본 주기형 40%, 만기 30년 상한)까지 적용해 셋 중 가장 작은 값을 한도로 봅니다.',
+    '거주 계획이 \'나중에 입주\'면 세입자 전세보증금을 안고 대출 없이 사고, 입주할 때 그동안 살 집 전세금·남은 현금·모은 돈과 전세퇴거자금 대출(1억 한도)로 전세금을 돌려준다고 계산합니다. 서울 아파트는 토지거래허가구역이라 2026-05-12부터 계속 무주택인 사람만 입주를 미룰 수 있고, 아니면 바로 입주로 계산합니다.',
+    '순위 메모에 적은 지역·가격·평형·연식·역세권은 그 순위의 조건이 됩니다. 그 지역에 추천이 없으면 같은 조건으로 추천이 나오는 구·동을 안내합니다.',
     '대출은 만기(기본 30년)로 매달 갚다가, 60세에 남은 대출은 집을 팔아 한 번에 갚고 후순위 지역의 작은 집으로 옮긴다고 봅니다. 노후 자금 = 60세 시세 − 남은 대출 − 옮겨 살 집 + 상환 여유분 저축.',
     '상환 여유분 저축: 월 상환 기본 한도에서 실제 상환액을 뺀 나머지를 매달 연 3%로 모은다고 봅니다 (대출 없는 3·4순위는 기본 한도 전액). 내 기준에서 끌 수 있습니다.',
     '은행 한도를 넘는 돈은 추가 자금(가족 차입·개인 근저당 등)으로 보고 같은 기간 상환으로 계산합니다.',

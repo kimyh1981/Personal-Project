@@ -327,6 +327,38 @@
     return { steps, current, currentDate: current ? reached[current] || null : null };
   }
 
+  // ── 실거주 의무 ───────────────────────────────────────────────────────
+  const day = (d) => (d ? (/^\d{4}-\d{2}$/.test(d) ? d + '-01' : String(d).slice(0, 10)) : '');
+  /**
+   * 매수 시점의 실거주 의무 판정.
+   * o: { regionId, propertyType, buyDate('YYYY-MM' 또는 날짜), nohomeSince(계속 무주택 시작일, 없으면 ''), tenant(세입자 있는 집),
+   *      permitAfter('extend'|'lift': 지정 기간 2026-12-31 뒤 가정), permitZone(필지 조회 결과, 없으면 지역 기준) }
+   * 반환: permit(토지거래허가 대상), deferOK(입주를 미룰 수 있음), loanMoveIn(주담대 6개월 전입의무 적용), why(설명)
+   */
+  function residenceRule(o) {
+    const RS = P.RESIDENCE, reg = E.region(o.regionId);
+    const typeOK = P.PROPERTY.landPermitTypes.includes(o.propertyType || '아파트');
+    const zone = o.permitZone != null ? !!o.permitZone : reg.landPermit;
+    const buy = day(o.buyDate);
+    const afterExpiry = !!buy && buy > RS.landPermitUntil;
+    const lifted = zone && afterExpiry && o.permitAfter === 'lift';
+    const permit = zone && typeOK && !lifted;
+    const since = day(o.nohomeSince);
+    const eligible = !!since && since <= RS.defer.nohomeSince;
+    const inWindow = !buy || buy <= RS.defer.applyUntil;
+    const deferOK = permit ? !!o.tenant && eligible && inWindow : true;
+    const loanMoveIn = (reg.capital || reg.regulated) && !(permit && RS.permitLoanMoveInWaived);
+    let why;
+    if (!zone || !typeOK) why = '토지거래허가 대상이 아니어서 실거주 의무가 없습니다.';
+    else if (lifted) why = `토지거래허가 지정 기간(${RS.landPermitUntil})이 끝나 해제된다고 가정했습니다 (연장 여부 미정). 이 경우 실거주 의무는 없습니다.`;
+    else if (!o.tenant) why = `토지거래허가구역: 허가 후 ${RS.registerMonths}개월 안에 취득하고 입주해 ${RS.stayYears}년 살아야 합니다.`;
+    else if (!eligible) why = `토지거래허가구역: 세입자 있는 집의 입주 유예는 ${RS.defer.nohomeSince}부터 계속 무주택인 사람만 받을 수 있습니다. 그 뒤에 집을 팔아 무주택이 돼도 대상이 아니어서, 허가 후 ${RS.registerMonths}개월 안에 입주해야 합니다.`;
+    else if (!inWindow) why = `토지거래허가구역: 입주 유예는 ${RS.defer.applyUntil}까지 허가를 신청한 경우에만 받을 수 있습니다.`;
+    else why = `토지거래허가구역 입주 유예 대상: 세입자 임대차 종료일(갱신계약 1회·최대 ${RS.defer.renewalMaxYears}년 포함)까지 입주를 미루고, 입주 후 ${RS.stayYears}년 살아야 합니다. ${RS.defer.applyUntil}까지 허가 신청.`;
+    if (zone && typeOK && afterExpiry && !lifted) why += ` (지정 기간 ${RS.landPermitUntil} 뒤에도 연장된다고 가정)`;
+    return { permit, zone, afterExpiry, lifted, eligible, deferOK, loanMoveIn, why };
+  }
+
   // ── 종합 ──────────────────────────────────────────────────────────────
   /**
    * 규제 판정 + 조건 플래그. level: block(차단) / warn(주의) / info(정보)
@@ -358,8 +390,10 @@
       if (done.length) flag0.push(['warn', '최신성', `규정 기준일(${P.asOf}) 이후 규제 관련 고시·법령 변경 ${done.length}건이 감지됐습니다: ${done.slice(0, 3).map((x) => `${x.date} ${x.title}`).join(' / ')}. 규정 파일 갱신 전 결과는 참고만 하세요.`]);
       if (!live.regulation.ok) flag0.push(['warn', '최신성', `일부 출처를 확인하지 못했습니다: ${live.regulation.errors.join(' / ')}`]);
     }
-    const landPermit = permitZone && P.PROPERTY.landPermitTypes.includes(c.propertyType);
+    const rr = residenceRule({ regionId: c.regionId, propertyType: c.propertyType, buyDate: c.timing && c.timing.purchaseDate, nohomeSince: c.nohomeSince, tenant: !!c.assumeTenant, permitAfter: c.permitAfter, permitZone });
+    const landPermit = rr.permit;
     const reg = { regulated: region.regulated, capital: region.capital, landPermit };
+    res.residence = rr;
     res.region = { ...reg, name: region.name };
     const flag = (level, category, message) => res.flags.push({ level, category, message });
     flag0.forEach(([l, cat, m]) => flag(l, cat, m));
@@ -368,8 +402,10 @@
 
     // 규제
     if (landPermit) {
-      if (!livesIn(c)) flag('block', '규제', '토지거래허가구역: 허가 후 2년 실거주 의무 → 전세 낀 매수·비거주 매수 불가');
+      if (!livesIn(c)) flag(rr.deferOK ? 'warn' : 'block', '규제', rr.why);
       else flag('info', '규제', '토지거래허가구역: 계약 전 구청 허가 필요, 2년 실거주 의무');
+    } else if (rr.lifted) {
+      flag('warn', '규제', rr.why);
     } else if (permitZone) {
       flag('info', '규제', `토지거래허가구역이지만 ${c.propertyType}는 허가 대상이 아닙니다 (아파트만 해당).`);
     }
@@ -408,5 +444,5 @@
     return res;
   }
 
-  return { PURPOSES, REQUIREMENTS, stageFromText, stageTimeline, parseDate, checklist, missing, valueErrors, unitPrice, residenceScore, investmentScore, reconstruction, timing, assess, livesIn, isRecon, isLive, isInvest, stageIndex };
+  return { PURPOSES, REQUIREMENTS, stageFromText, stageTimeline, parseDate, checklist, missing, valueErrors, unitPrice, residenceScore, investmentScore, reconstruction, timing, assess, residenceRule, livesIn, isRecon, isLive, isInvest, stageIndex };
 });
