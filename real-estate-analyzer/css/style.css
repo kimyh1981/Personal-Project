@@ -921,3 +921,13 @@ button.rule-rank:active { opacity: .75; }
 .rule-ctl label, .redev-form label { position: relative; }
 .rule-ctl .clr, .redev-form .clr { position: absolute; right: 7px; bottom: 7px; margin: 0; width: 20px; height: 20px; font-size: 13px; }
 .rule-ctl input[type=number], .redev-form input[type=number] { padding-right: 30px; }
+/* 내 조건으로 찾기 ↔ 판정: 이전·목록으로·다음 */
+.quick-nav { position: sticky; top: calc(8px + env(safe-area-inset-top, 0px)); z-index: 15; display: grid; grid-template-columns: auto 1fr auto; gap: 6px; padding: 6px; border-radius: 16px; background: color-mix(in srgb, var(--group) 88%, transparent); -webkit-backdrop-filter: saturate(180%) blur(16px); backdrop-filter: saturate(180%) blur(16px); box-shadow: 0 4px 14px rgb(0 0 0 / .12); }
+.quick-nav[hidden] { display: none; }
+.quick-nav button { border: 0; border-radius: 12px; padding: 10px 14px; font: 600 15px var(--font); color: var(--tint); background: var(--group-2); cursor: pointer; }
+.quick-nav button:disabled { opacity: .35; cursor: default; }
+.quick-nav .qn-list { display: grid; justify-items: center; gap: 1px; background: var(--tint); color: #fff; min-width: 0; }
+.quick-nav .qn-list small { font-size: 12px; font-weight: 500; opacity: .9; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-item.q-current { outline: 2.5px solid var(--tint); outline-offset: -2px; }
+.q-item.q-flash { animation: qflash 1.2s ease-out; }
+@keyframes qflash { 0% { background: color-mix(in srgb, var(--tint) 30%, var(--group)); } 100% { background: var(--group); } }
