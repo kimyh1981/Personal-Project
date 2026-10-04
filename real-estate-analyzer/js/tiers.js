@@ -302,8 +302,9 @@
   function plan(c, p, f, bank, costs, term) {
     const now = (why, rule, forced) => {
       const need = c.price + costs - f.cash;
-      // 취득세·중개보수·등기 비용은 내 현금에서 먼저 낸다. 은행 대출(LTV·가격별 한도)은 집값에만 쓰므로 비용이 모자라면 추가 자금으로 남는다
-      return { mode: 'now', need, loan: Math.max(0, Math.min(need, bank.amount)), loanLate: 0, plus: Math.max(0, need - bank.amount), startMonths: 0, why: why || '', rule: rule || null, forced: !!forced,
+      // 취득세·중개보수·등기 비용은 내 현금에서 먼저 낸다. 은행 대출(LTV·가격별 한도)은 집값에만 쓰므로 비용이 모자라면 추가 자금으로 남는다.
+      // 대출이 필요하면 그 집의 법정 최대 한도(LTV·주택가격별 한도·스트레스 DSR 중 최소)까지 받고, 필요보다 많은 몫은 현금으로 남긴다
+      return { mode: 'now', need, loan: need > 0 ? bank.amount : 0, loanLate: 0, plus: Math.max(0, need - bank.amount), startMonths: 0, why: why || '', rule: rule || null, forced: !!forced,
         cashAvail: f.cash, taxShort: Math.max(0, costs - f.cash) };
     };
     if (p.residence !== 'defer') return now();
@@ -348,7 +349,8 @@
     // 재건축 연한: 같은 동 신축 시세로 재건축 뒤 가치를 잡고 분담금을 뺀다. 같은 동에 신축이 없으면 +0.7%p로 대신
     const rb = recon ? rebuild(c, p, dong, gr.g, Math.max(1, p.targetAge - p.age)) : null;
     const gRecon = recon && !rb && (!dong || dong.newM2 == null) ? Math.min(0.08, gr.g + 0.007) : gr.g; // 같은 동 신축 정보가 없을 때만 +0.7%p
-    const leftover = Math.max(0, -need);
+    // 남는 현금: 대출 없이 사면 쓰고 남는 돈, 대출을 최대로 받으면 필요보다 더 받은 몫
+    const leftover = pl.mode === 'now' ? Math.max(0, loan + plus - need) : Math.max(0, -need);
     const v60 = c.price * Math.pow(1 + gr.g, years);
     const v60plain = c.price * Math.pow(1 + gRecon, years);
     // 재건축으로 오르는 몫은 성사 가능성만큼만 인정 (손해면 재건축에 기대지 않고 그대로 둔다)
@@ -361,9 +363,11 @@
     const debt60 = pl.mode === 'defer'
       ? balanceAfter(pl.loanNow, p.loanRate, term * 12, years * 12) + balanceAfter(pl.loanLate, p.loanRate, term * 12, nm) + balanceAfter(plus, p.plusRate, term * 12, nm)
       : balanceAfter(loan, p.loanRate, term * 12, years * 12) + balanceAfter(plus, p.plusRate, term * 12, years * 12);
-    const ret = retirement(v60, save60, p, years, debt60);
-    const retRecon = retirement(v60r, save60, p, years, debt60);
-    const retCash = retirement(v60, cash60 + save60, p, years, debt60);
+    // 대출을 최대로 받아 남긴 현금은 60세까지 운용해 노후 자금에 더한다 (대출 없이 남는 돈은 추가 B 순위에서만)
+    const kept60 = loan > 0 ? cash60 : 0;
+    const ret = retirement(v60, save60 + kept60, p, years, debt60);
+    const retRecon = retirement(v60r, save60 + kept60, p, years, debt60);
+    const retCash = retirement(v60, cash60 + save60, p, years, debt60); // 대출 여부와 상관없이 남는 돈 운용 포함
     const retHome = retirement(v60, 0, p, years, debt60); // 저축 없이 집만으로 (4순위)
     const loc = location(c);
     return {
@@ -618,6 +622,7 @@
       ? `${e.c.builtYear}년 준공 — 재건축 시 이주 필요, 분담금 약 ${Math.round(e.rebuild.share / MAN).toLocaleString()}만원 · 입주까지 ${e.rebuild.years}년 · 성사 가능성 ${Math.round(e.rebuild.chance * 100)}% (${e.rebuild.assumeSource})`
       : `${e.c.builtYear}년 준공 — 재건축 가치는 넣지 않거나(주상복합·소규모·입주가 60세 이후) 대략 반영`);
     if (e.rebuild && e.rebuild.capped) out.push('같은 동 신축과 격차가 커서 재건축 뒤 시세를 현재가의 2배로 제한 (다른 상품일 가능성)');
+    if ((!e.plan || e.plan.mode === 'now') && e.loan > 0 && e.leftover > 0) out.push(`대출은 이 집의 최대 한도 ${Math.round(e.loan / MAN).toLocaleString()}만원(${e.bank.by})으로 계산 — 필요한 돈보다 ${Math.round(e.leftover / MAN).toLocaleString()}만원 더 받아 현금으로 남김 (덜 받으면 월 상환이 줄어듦)`);
     if (e.loan + e.plus > 0 && !e.bank.dsrChecked) out.push('연소득을 넣지 않아 DSR 한도는 확인하지 않음');
     if (e.payTotal > p.pay && e.payTotal <= p.payMax) out.push(`월 상환 ${Math.round(e.payTotal / MAN)}만원 (기본 ${Math.round(p.pay / MAN)}만원 초과, 최대 한도 이내)`);
     if (e.debt60 > 0) out.push(`${p.targetAge}세에 남는 대출 약 ${Math.round(e.debt60 / MAN).toLocaleString()}만원은 집을 팔아 갚는 계획 (시세가 오르지 않으면 부담)`);

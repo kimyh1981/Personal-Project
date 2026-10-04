@@ -156,3 +156,18 @@ test('실거주 판정: 세입자 있는 집 입주 유예는 2026-05-12부터 �
   assert.equal(C.residenceRule({ ...base, buyDate: '2027-02', permitAfter: 'extend' }).permit, true);
   assert.equal(C.residenceRule({ ...base, propertyType: '빌라' }).permit, false);
 });
+
+test('토지거래허가: 바로 입주해야 하는 아파트를 매수 후 4개월 넘게 지나 입주하면 불가', () => {
+  const far = C.assess(base({ regionId: 'seoul-송파구', subwayWalkMin: 5, location: { subwayWalkMin: 5 }, timing: { purchaseDate: '2026-11', moveInBy: '2028-11' } }), fund());
+  const b = far.flags.find((f) => f.level === 'block' && /토지거래허가/.test(f.message));
+  assert.ok(b, '불가 문구');
+  assert.match(b.message, /^불가 — /);
+  assert.match(b.message, /24개월 뒤/);
+  assert.equal(far.verdict, '불가');
+  // 4개월 안 입주는 허가 조건 안이라 가능
+  const near = C.assess(base({ regionId: 'seoul-송파구', location: { subwayWalkMin: 5 }, timing: { purchaseDate: '2026-11', moveInBy: '2027-03' } }), fund());
+  assert.ok(!near.flags.some((f) => f.level === 'block' && /토지거래허가/.test(f.message)));
+  // 빌라는 허가 대상이 아니라 늦게 입주해도 이 사유로 막히지 않는다
+  const villa = C.assess(base({ regionId: 'seoul-송파구', propertyType: '빌라', location: { subwayWalkMin: 5 }, timing: { purchaseDate: '2026-11', moveInBy: '2028-11' } }), fund());
+  assert.ok(!villa.flags.some((f) => f.level === 'block' && /토지거래허가/.test(f.message)));
+});

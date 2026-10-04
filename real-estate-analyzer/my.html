@@ -39,8 +39,10 @@
     <nav class="tier-nav" id="tierNav" aria-label="순위 바로가기"></nav>
     <div id="myTiers"></div>
 
-    <details class="card" id="myProfileCard">
-      <summary><h3>내 기준 (이 기기에만 저장)</h3></summary>
+    <!-- details 대신 버튼으로 연다: 아이폰 사파리는 display:grid 인 details 를 열지 못하는 경우가 있다 -->
+    <section class="card" id="myProfileCard">
+      <button type="button" class="profile-toggle" id="myProfileToggle" aria-expanded="false" aria-controls="myProfileBody"><h3>내 기준 (이 기기에만 저장)</h3><span class="profile-toggle-label">열기</span></button>
+      <div id="myProfileBody" class="profile-body" hidden>
       <div id="setupPasteWrap"></div>
       <form id="myProfile" class="panel my-form" autocomplete="off">
         <fieldset data-footer="은행 대출은 집값에만 씁니다. 추가 동원 가능 자금은 모든 순위와 매수 판단기의 '내 조건으로 찾기'에 반영됩니다.">
@@ -111,7 +113,8 @@
           <label class="f">최소 전용면적 <span class="unit">㎡</span><input id="p_minArea" type="number" step="1"></label>
         </fieldset>
       </form>
-    </details>
+      </div>
+    </section>
 
     <a class="card my-link guide-link" href="guide.html"><span><b style="color:inherit">사용 안내</b> <span class="muted">· 순위 조건 바꾸기, 내 기준 넣기 영상</span></span><b>보기 ›</b></a>
 

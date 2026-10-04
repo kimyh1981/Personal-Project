@@ -129,7 +129,11 @@
     $('q_rule').innerHTML = `<div class="residence-box">
       <h4>${gap >= 3 ? `${gap}개월 뒤 입주 (세입자 두고 매수)` : '바로 입주'} · 매수 ${esc(buy)}</h4>
       ${groups.map(({ ks, rr }) => gap >= 3
-        ? `<p><span class="chip ${rr.deferOK ? 'good' : 'critical'}">${esc(ks.join('·'))} ${rr.deferOK ? '가능' : '불가'}</span> ${esc(rr.why)}</p>${rr.deferOK ? (rr.loanMoveIn ? '<p class="muted">수도권 주담대는 6개월 안에 전입해야 해서 매수 때 대출 없이 세입자 전세를 안고 사는 계획으로 계산합니다.</p>' : '') : '<p class="muted">그래서 이 종류는 바로 입주로 계산했습니다.</p>'}`
+        ? (rr.deferOK
+          ? `<p><span class="chip good">${esc(ks.join('·'))} 가능</span> ${esc(rr.why)}</p>${rr.loanMoveIn ? '<p class="muted">수도권 주담대는 6개월 안에 전입해야 해서 매수 때 대출 없이 세입자 전세를 안고 사는 계획으로 계산합니다.</p>' : ''}`
+          : gap > P.RESIDENCE.registerMonths
+            ? `<p class="ban-banner" role="alert"><b>불가</b><span>${esc(ks.join('·'))}: ${gap}개월 뒤 입주는 토지거래허가 즉시 입주 조건(허가 후 ${P.RESIDENCE.registerMonths}개월 안 입주)을 못 지켜 매수 불가. ${esc(rr.why.replace(/^토지거래허가구역: /, ''))}</span></p><p class="muted">목록 점수·계산은 바로 입주했을 때 기준입니다.</p>`
+            : `<p><span class="chip warning">${esc(ks.join('·'))} 유예 불가</span> ${esc(rr.why)}</p><p class="muted">${gap}개월 뒤 입주는 허가 후 ${P.RESIDENCE.registerMonths}개월 안이라 가능하고, 바로 입주로 계산했습니다.</p>`)
         : `<p class="muted"><b>${esc(ks.join('·'))}</b>: ${esc(rr.why)}</p>`).join('')}
     </div>`;
     if (!gus.length || !kinds.length) { $('q_list').innerHTML = `<p>${!gus.length ? '구를' : '주택 종류를'} 하나 이상 고르세요.</p>`; return; }
@@ -150,6 +154,9 @@
     const verdictOf = new Map();
     if (window.REA_APP) for (const e of [...inTier.slice(0, shown), ...outside.slice(0, shown)]) verdictOf.set(e.c.id, window.REA_APP.scoreFor(valuesFor(e, p, buy, move, locationSync(e.c))));
     if (currentId && !list.some((e) => e.c.id === currentId)) currentId = null;
+    // 토지거래허가: 입주를 미룰 수 없는 집(바로 입주로 계산)인데 희망 입주가 허가 후 4개월을 넘기면 그 시기로는 매수 불가
+    const banned = (e) => gap > P.RESIDENCE.registerMonths && e.plan.forced;
+    const nBan = list.filter(banned).length;
     const why = (e) => (e.plus > 0 ? `추가 자금 ${won(e.plus)} 필요` : e.payTotal > p.payMax ? `월 상환 ${manw(e.payTotal)} (최대 ${manw(p.payMax)} 초과)` : e.loc.score < 45 && !e.loc.estimated ? '입지 기준 미달' : e.c.area < p.minArea ? '면적 기준 미달' : '노후 목표 미달');
     const row = (e) => {
       const c = e.c, t = tierOf.get(c.id), defer = e.plan.mode === 'defer', v = verdictOf.get(c.id);
@@ -157,6 +164,7 @@
         ${v ? `<span class="q-score" data-tone="${esc(v.tone)}"><b>${v.score}</b><small>${esc(v.label.replace(/ — .*/, ''))}</small></span>` : ''}
         <span class="q-top"><b>${esc(c.name)}</b> <span class="muted">${esc(c.dong)} · 전용 ${c.area}㎡${c.builtYear ? ` · ${c.builtYear}년` : ''}</span></span>
         <span class="q-price">${won(c.price)}${c.jeonse ? ` <span class="muted">전세 ${won(c.jeonse)}</span>` : ''}</span>
+        ${banned(e) ? `<span class="q-ban"><b>불가</b> 토지거래허가 — 매수 후 ${P.RESIDENCE.registerMonths}개월 안에 입주해야 해서 ${esc(move)} 입주는 안 됨 (아래 계산은 바로 입주 기준)</span>` : ''}
         <span class="q-tags">${t ? `<span class="chip good">${esc(t.t.rank)}</span>` : `<span class="chip warning">조건 밖 · ${esc(why(e))}</span>`}
           ${c.kind && c.kind !== '아파트' ? `<span class="chip neutral">${esc(c.kind)}</span>` : ''}<span class="chip neutral">${defer ? `${e.plan.startMonths}개월 뒤 입주` : '바로 입주'}</span>
           ${e.extraCash > 0 ? `<span class="chip neutral">여유자금 ${won(e.extraCash)} 포함</span>` : ''}
@@ -164,7 +172,7 @@
         <span class="q-go">판정 보기 ›</span>
       </button></li>`;
     };
-    $('q_list').innerHTML = `<p class="muted">${esc(gus.join('·'))}${dongs.length ? ` (${esc(dongs.map((d) => d.split('|')[1]).join('·'))})` : ''} · ${esc(kinds.join('·'))} 단지·평형 ${subset.length.toLocaleString()}곳 중 내 조건으로 순위에 드는 곳 <b>${inTier.length.toLocaleString()}곳</b> (이번 주 서울 실거래 ${esc(M.market.asOf.slice(0, 10))} 기준). 왼쪽 숫자는 그 단지로 계산한 판정 점수입니다${[...verdictOf.values()].some(Boolean) && inTier.some((e) => locationSync(e.c).estimated) ? ' (역·학교 거리를 아직 확인하지 않은 단지는 10분으로 추정)' : ''}.</p>
+    $('q_list').innerHTML = `${nBan ? `<p class="ban-banner" role="alert"><b>불가</b><span>토지거래허가: 이 목록의 아파트 ${nBan.toLocaleString()}곳은 입주를 미룰 수 없어 매수 ${esc(buy)} → 입주 ${esc(move)}(${gap}개월 뒤) 계획으로는 살 수 없습니다. 허가 후 ${P.RESIDENCE.registerMonths}개월 안에 입주하면 가능하고, 점수·계산은 바로 입주 기준입니다. 입주 유예는 ${esc(P.RESIDENCE.defer.nohomeSince)}부터 계속 무주택인 사람이 세입자 있는 집을 살 때만 됩니다.</span></p>` : ''}<p class="muted">${esc(gus.join('·'))}${dongs.length ? ` (${esc(dongs.map((d) => d.split('|')[1]).join('·'))})` : ''} · ${esc(kinds.join('·'))} 단지·평형 ${subset.length.toLocaleString()}곳 중 내 조건으로 순위에 드는 곳 <b>${inTier.length.toLocaleString()}곳</b> (이번 주 서울 실거래 ${esc(M.market.asOf.slice(0, 10))} 기준). 왼쪽 숫자는 그 단지로 계산한 판정 점수입니다${[...verdictOf.values()].some(Boolean) && inTier.some((e) => locationSync(e.c).estimated) ? ' (역·학교 거리를 아직 확인하지 않은 단지는 10분으로 추정)' : ''}.</p>
       ${inTier.length ? `<ol class="q-list">${inTier.slice(0, shown).map(row).join('')}</ol>${inTier.length > shown ? `<button type="button" class="ghost q-more" data-more>더 보기 (${Math.min(30, inTier.length - shown)}곳 더 · 남은 ${(inTier.length - shown).toLocaleString()}곳)</button>` : ''}` : `<p>이 지역·종류에는 이번 주 내 조건(순위 기준)에 맞는 곳이 없습니다.${kinds.some((k) => M.kindStatus()[k] !== 'ok') ? ` (${esc(kinds.filter((k) => M.kindStatus()[k] !== 'ok').join('·'))}는 아직 실거래 데이터가 없습니다)` : ''} 다른 동·구를 고르거나 매수 시기를 바꿔 보세요.</p>`}
       ${outside.length ? `<details class="q-out"${outside.slice(0, shown).some((e) => e.c.id === currentId) ? ' open' : ''}><summary>조건 밖 ${outside.length.toLocaleString()}곳 (가격 낮은 순)</summary><ol class="q-list">${outside.slice(0, shown).map(row).join('')}</ol></details>` : ''}`;
     // 이전·다음은 누른 단지가 있는 목록(순위에 드는 곳 / 조건 밖) 안에서만
@@ -263,8 +271,8 @@
     } catch (_) { return cur; }
   }
 
-  // 판정 엔진과 같은 방식(취득 비용 + 이사비)으로 모자라는 돈만큼만 대출 (한도는 엔진이 다시 자른다)
-  function loanFor(c, cash) {
+  // 판정 엔진과 같은 방식(취득 비용 + 이사비)으로 모자라는 돈이 있는지 본다
+  function needFor(c, cash) {
     const closing = E.closingCosts({ price: c.price, regionId: c.regionId, homesAfter: 1, temporaryTwo: false, areaOver85: c.area > 85, firstTime: false,
       publicPrice: c.price * 0.69, bondDiscount: (parseFloat($('bondDiscount').value) || 0) / 100, vat: true, propertyType: c.kind || '아파트' }).total;
     const need = c.price + closing + (parseFloat($('moveCost').value) || 0) * MAN - cash;
@@ -286,7 +294,7 @@
       employment: p.employment || 'regular', spouseEmployment: '', retireAge: p.targetAge,
       monthlyLiving: Math.round(Math.max(0, net - p.payMax) / MAN), existingDebt: 0, creditBalance: 0, annualSavings: '',
       rate: +(p.loanRate * 100).toFixed(2), termYears: p.loanTerm || 30, rateType: p.rateType || 'periodic', method: 'amortized', lender: 'bank',
-      loanWanted: defer ? 0 : loanFor(c, cash), usePrivate: false, reconTarget: false, vat: true,
+      loanWanted: defer || needFor(c, cash) <= 0 ? 0 : '', // 대출이 필요하면 비워 둬서 판정 엔진이 법정 최대 한도(LTV·가격별 한도·스트레스 DSR)로 잡는다 usePrivate: false, reconTarget: false, vat: true,
       assumeTenant: defer, nohomeSince: p.nohomeSince || '', permitAfter: p.permitAfter || 'extend',
       purchaseDate: buy, moveInBy: move !== buy ? move : '',
       appreciation: +(e.growth.g * 100).toFixed(1), rentDeposit: c.jeonse ? Math.round(c.jeonse / MAN) : $('rentDeposit').value,
