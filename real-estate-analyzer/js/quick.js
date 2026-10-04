@@ -5,6 +5,7 @@
  *                   그 지역 단지를 내 조건으로 평가해 보여 준다. 단지를 고르면 판정 입력을 채워 같은 엔진으로 판정한다.
  */
 (function () {
+  const CH = window.REA_CHIPS;
   const T = window.REA_TIERS, M = window.REA_MYMARKET, E = window.REA, P = window.REA_POLICY, GEO = window.REA_GEO, COND = window.REA_COND;
   const $ = (id) => document.getElementById(id);
   const MAN = 1e4;
@@ -53,8 +54,26 @@
     const q = load(QUICK_KEY, {});
     const buy = q.buy || profile.buyDate || thisMonth();
     const move = q.move || (profile.residence === 'defer' ? addMonths(buy, profile.deferMonths || 24) : buy);
-    return { buy, move, gu: q.gu || '마포구', dong: q.dong || '' };
+    // 지역·종류는 여러 개: 저장된 값 → 내 기준의 찾을 지역·종류 → 마포구·아파트
+    const gus = q.gus || (q.gu ? [q.gu] : (profile.regions || []).length ? profile.regions : ['마포구']);
+    return { buy, move, gus, dongs: q.dongs || [], kinds: q.kinds || M.kindsOf(profile) };
   }
+  const kindNote = (k, st) => (st[k] === 'ok' ? '' : st[k] === '활용신청 필요' ? '데이터 신청 필요' : '데이터 없음');
+  function pickersHtml(s) {
+    const st = M.kindStatus();
+    return `<div class="quick-pick"><h4>구 <span class="muted">여러 개 고를 수 있음</span></h4>${CH.html('q_gus', GU.map((g) => ({ value: g, label: g })), s.gus, { presets: CH.SEOUL_GROUPS.slice(1) })}</div>
+      <div class="quick-pick"><h4>주택 종류</h4>${CH.html('q_kinds', M.KINDS.map((k) => ({ value: k, label: k, note: kindNote(k, st) })), s.kinds)}
+        ${M.KINDS.some((k) => st[k] !== 'ok') ? `<p class="muted">빌라(연립·다세대)·오피스텔 실거래는 공공데이터포털에서 '국토교통부_연립다세대 매매·전월세 실거래가', '국토교통부_오피스텔 매매·전월세 실거래가' 4개를 활용신청하면 다음 주 자동 수집부터 함께 찾습니다.</p>` : ''}</div>
+      <details class="quick-pick" id="q_dongWrap"${s.dongs.length ? ' open' : ''}><summary>동 고르기 <span class="muted">${s.dongs.length ? `${s.dongs.length}곳 선택` : '안 고르면 고른 구 전체'}</span></summary><div id="q_dongs"></div></details>`;
+  }
+  // 고른 구의 동 칩 (같은 이름의 동이 여러 구에 있어 '구|동'으로 구별)
+  function renderDongs(selected) {
+    const gus = CH.values(panel, 'q_gus'), pr = M.prepare();
+    const by = gus.map((g) => [g, [...new Set(pr.all.filter((c) => c.regionId === 'seoul-' + g).map((c) => c.dong))].sort((a, b) => a.localeCompare(b, 'ko'))]);
+    const keep = new Set(selected);
+    $('q_dongs').innerHTML = by.map(([g, ds]) => `<p class="muted dong-gu">${esc(g)}</p>${CH.html('q_dongs_' + g, ds.map((d) => ({ value: g + '|' + d, label: d })), ds.map((d) => g + '|' + d).filter((k) => keep.has(k)))}`).join('') || '<p class="muted">구를 먼저 고르세요.</p>';
+  }
+  const pickedDongs = () => [...panel.querySelectorAll('#q_dongs .pick[aria-pressed="true"]')].map((x) => x.dataset.value);
 
   async function renderPanel() {
     profile = M.loadProfile();
@@ -73,19 +92,14 @@
       <div class="quick-form">
         <label class="f">매수 시기<input id="q_buy" type="month" data-nosave value="${esc(s.buy)}"></label>
         <label class="f">입주 시기<input id="q_move" type="month" data-nosave value="${esc(s.move)}"><span class="hint">매수 시기와 같으면 바로 입주, 3개월 이상 늦으면 세입자 두고 사는 계획으로 계산</span></label>
-        <label class="f">구<select id="q_gu" data-nosave>${GU.map((g) => `<option${g === s.gu ? ' selected' : ''}>${g}</option>`).join('')}</select></label>
-        <label class="f">동<select id="q_dong" data-nosave><option value="">전체</option></select></label>
       </div>
+      <div id="q_pickers"></div>
       <div id="q_rule"></div>
       <div id="q_list"><p class="muted">서울 시장 데이터를 불러오는 중…</p></div>`;
     try { await M.load(); } catch (err) { $('q_list').innerHTML = `<p>${esc(err.message)}</p>`; return; }
-    fillDongs(s);
+    $('q_pickers').innerHTML = pickersHtml(s);
+    renderDongs(s.dongs);
     compute();
-  }
-  function fillDongs(s) {
-    const pr = M.prepare(), gu = $('q_gu').value;
-    const dongs = [...new Set(pr.all.filter((c) => c.regionId === 'seoul-' + gu).map((c) => c.dong))].sort((a, b) => a.localeCompare(b, 'ko'));
-    $('q_dong').innerHTML = '<option value="">전체</option>' + dongs.map((d) => `<option${d === s.dong ? ' selected' : ''}>${esc(d)}</option>`).join('');
   }
 
   // 고른 시기로 바꾼 평가용 조건. 지역은 직접 고르므로 순위 메모의 지역·가격 조건은 쓰지 않는다
@@ -95,18 +109,30 @@
     return { ...profile, buyDate: buy, residence: gap >= 3 ? 'defer' : 'now', deferMonths: gap >= 3 ? gap : profile.deferMonths, tierRules: rules, locEstimatedOk: true };
   }
 
-  function compute() {
+  let shown = 30; // 목록에 보일 개수 (더 보기로 30개씩)
+  function compute(keepShown) {
+    if (!keepShown) shown = 30;
     const { buy, move } = dates();
-    const gu = $('q_gu').value, dong = $('q_dong').value;
-    save(QUICK_KEY, { buy, move, gu, dong });
+    const gus = CH.values(panel, 'q_gus'), dongs = pickedDongs(), kinds = CH.values(panel, 'q_kinds');
+    save(QUICK_KEY, { buy, move, gus, dongs, kinds });
+    $('q_dongWrap').querySelector('summary .muted').textContent = dongs.length ? `${dongs.length}곳 선택` : '안 고르면 고른 구 전체';
     const p = evalProfile(buy, move), gap = months(buy, move);
-    const rr = COND.residenceRule({ regionId: 'seoul-' + gu, buyDate: buy, nohomeSince: p.nohomeSince, tenant: gap >= 3, permitAfter: p.permitAfter });
+    // 실거주 규정은 주택 종류에 따라 다르다 (토지거래허가는 아파트만)
+    const rules = (kinds.length ? kinds : ['아파트']).map((k) => [k, COND.residenceRule({ regionId: 'seoul-' + (gus[0] || '마포구'), propertyType: k, buyDate: buy, nohomeSince: p.nohomeSince, tenant: gap >= 3, permitAfter: p.permitAfter })]);
+    const groups = [];
+    for (const [k, rr] of rules) { const g = groups.find((x) => x.rr.why === rr.why); if (g) g.ks.push(k); else groups.push({ ks: [k], rr }); }
     $('q_rule').innerHTML = `<div class="residence-box">
       <h4>${gap >= 3 ? `${gap}개월 뒤 입주 (세입자 두고 매수)` : '바로 입주'} · 매수 ${esc(buy)}</h4>
-      ${gap >= 3 ? `<p><span class="chip ${rr.deferOK ? 'good' : 'critical'}">${rr.deferOK ? '가능' : '불가'}</span> ${esc(rr.why)}</p>${rr.deferOK ? '' : '<p class="muted">그래서 아래 목록은 바로 입주로 계산했습니다. 허가가 해제된 뒤(2027년 이후) 매수로 보려면 내 기준에서 \'허가 기간 뒤 해제된다고 보기\'를 고르세요.</p>'}` : `<p class="muted">${esc(rr.why)}</p>`}
+      ${groups.map(({ ks, rr }) => gap >= 3
+        ? `<p><span class="chip ${rr.deferOK ? 'good' : 'critical'}">${esc(ks.join('·'))} ${rr.deferOK ? '가능' : '불가'}</span> ${esc(rr.why)}</p>${rr.deferOK ? (rr.loanMoveIn ? '<p class="muted">수도권 주담대는 6개월 안에 전입해야 해서 매수 때 대출 없이 세입자 전세를 안고 사는 계획으로 계산합니다.</p>' : '') : '<p class="muted">그래서 이 종류는 바로 입주로 계산했습니다.</p>'}`
+        : `<p class="muted"><b>${esc(ks.join('·'))}</b>: ${esc(rr.why)}</p>`).join('')}
     </div>`;
+    if (!gus.length || !kinds.length) { $('q_list').innerHTML = `<p>${!gus.length ? '구를' : '주택 종류를'} 하나 이상 고르세요.</p>`; return; }
     const pr = M.prepare(), f = T.funds(p);
-    const subset = pr.all.filter((c) => c.regionId === 'seoul-' + gu && (!dong || c.dong === dong));
+    const gset = new Set(gus.map((g) => 'seoul-' + g)), dset = new Set(dongs), kset = new Set(kinds);
+    const guOfId = (r) => r.replace(/^seoul-/, '');
+    const subset = pr.all.filter((c) => gset.has(c.regionId) && kset.has(c.kind) && (!dset.size || dset.has(guOfId(c.regionId) + '|' + c.dong)
+      || ![...dset].some((k) => k.startsWith(guOfId(c.regionId) + '|')))); // 동을 고르지 않은 구는 구 전체
     const evals = subset.map((c) => M.evaluate(c, p, f));
     const res = T.classify(evals, p, (x) => M.evaluateAll(p, subset, x));
     // 순위에 든 단지는 그 순위 계산값(여유자금을 넣은 순위면 그만큼 늘린 현금)으로 보여 준다
@@ -117,7 +143,7 @@
     list = [...inTier, ...outside];
     // 판정 점수: 목록에 보이는 단지마다 판정 엔진으로 계산 (단지·시기·지역이 바뀌면 점수도 바뀐다)
     const verdictOf = new Map();
-    if (window.REA_APP) for (const e of [...inTier.slice(0, 30), ...outside.slice(0, 30)]) verdictOf.set(e.c.id, window.REA_APP.scoreFor(valuesFor(e, p, buy, move, locationSync(e.c))));
+    if (window.REA_APP) for (const e of [...inTier.slice(0, shown), ...outside.slice(0, shown)]) verdictOf.set(e.c.id, window.REA_APP.scoreFor(valuesFor(e, p, buy, move, locationSync(e.c))));
     // 아래 막대: 고른 단지가 없으면 '단지를 누르면 판정'
     const pk = window.REA_FUTURE && window.REA_FUTURE.pick;
     if (!pk || !list.some((e) => e.c.id === pk.id)) {
@@ -131,15 +157,15 @@
         <span class="q-top"><b>${esc(c.name)}</b> <span class="muted">${esc(c.dong)} · 전용 ${c.area}㎡${c.builtYear ? ` · ${c.builtYear}년` : ''}</span></span>
         <span class="q-price">${won(c.price)}${c.jeonse ? ` <span class="muted">전세 ${won(c.jeonse)}</span>` : ''}</span>
         <span class="q-tags">${t ? `<span class="chip good">${esc(t.t.rank)}</span>` : `<span class="chip warning">조건 밖 · ${esc(why(e))}</span>`}
-          <span class="chip neutral">${defer ? `${e.plan.startMonths}개월 뒤 입주` : '바로 입주'}</span>
+          ${c.kind && c.kind !== '아파트' ? `<span class="chip neutral">${esc(c.kind)}</span>` : ''}<span class="chip neutral">${defer ? `${e.plan.startMonths}개월 뒤 입주` : '바로 입주'}</span>
           ${e.extraCash > 0 ? `<span class="chip neutral">여유자금 ${won(e.extraCash)} 포함</span>` : ''}
           <span class="muted">${e.loan + e.plus > 0 ? `대출 ${won(e.loan)} · 월 ${manw(e.payTotal)}` : '대출 없음'} · 노후 ${Math.round(e.ratio * 100)}%</span></span>
         <span class="q-go">판정 보기 ›</span>
       </button></li>`;
     };
-    $('q_list').innerHTML = `<p class="muted">${esc(gu)}${dong ? ' ' + esc(dong) : ''} 단지·평형 ${subset.length.toLocaleString()}곳 중 내 조건으로 순위에 드는 곳 <b>${inTier.length.toLocaleString()}곳</b> (이번 주 서울 실거래 ${esc(M.market.asOf.slice(0, 10))} 기준). 왼쪽 숫자는 그 단지로 계산한 판정 점수입니다${[...verdictOf.values()].some(Boolean) && inTier.some((e) => locationSync(e.c).estimated) ? ' (역·학교 거리를 아직 확인하지 않은 단지는 10분으로 추정)' : ''}.</p>
-      ${inTier.length ? `<ol class="q-list">${inTier.slice(0, 30).map(row).join('')}</ol>` : '<p>이 지역에는 이번 주 내 조건(순위 기준)에 맞는 곳이 없습니다. 다른 동·구를 고르거나 매수 시기를 바꿔 보세요.</p>'}
-      ${outside.length ? `<details class="q-out"><summary>조건 밖 ${outside.length.toLocaleString()}곳 (가격 낮은 순)</summary><ol class="q-list">${outside.slice(0, 30).map(row).join('')}</ol></details>` : ''}`;
+    $('q_list').innerHTML = `<p class="muted">${esc(gus.join('·'))}${dongs.length ? ` (${esc(dongs.map((d) => d.split('|')[1]).join('·'))})` : ''} · ${esc(kinds.join('·'))} 단지·평형 ${subset.length.toLocaleString()}곳 중 내 조건으로 순위에 드는 곳 <b>${inTier.length.toLocaleString()}곳</b> (이번 주 서울 실거래 ${esc(M.market.asOf.slice(0, 10))} 기준). 왼쪽 숫자는 그 단지로 계산한 판정 점수입니다${[...verdictOf.values()].some(Boolean) && inTier.some((e) => locationSync(e.c).estimated) ? ' (역·학교 거리를 아직 확인하지 않은 단지는 10분으로 추정)' : ''}.</p>
+      ${inTier.length ? `<ol class="q-list">${inTier.slice(0, shown).map(row).join('')}</ol>${inTier.length > shown ? `<button type="button" class="ghost q-more" data-more>더 보기 (${Math.min(30, inTier.length - shown)}곳 더 · 남은 ${(inTier.length - shown).toLocaleString()}곳)</button>` : ''}` : `<p>이 지역·종류에는 이번 주 내 조건(순위 기준)에 맞는 곳이 없습니다.${kinds.some((k) => M.kindStatus()[k] !== 'ok') ? ` (${esc(kinds.filter((k) => M.kindStatus()[k] !== 'ok').join('·'))}는 아직 실거래 데이터가 없습니다)` : ''} 다른 동·구를 고르거나 매수 시기를 바꿔 보세요.</p>`}
+      ${outside.length ? `<details class="q-out"><summary>조건 밖 ${outside.length.toLocaleString()}곳 (가격 낮은 순)</summary><ol class="q-list">${outside.slice(0, shown).map(row).join('')}</ol></details>` : ''}`;
   }
 
   // 이 칸들은 판정 입력이 아니다: 상세 입력 폼의 재계산(아래 막대 점수)을 깨우지 않게 여기서 멈춘다
@@ -147,7 +173,14 @@
   panel.addEventListener('change', (e) => {
     if (!e.target.id || !e.target.id.startsWith('q_')) return;
     e.stopPropagation();
-    if (e.target.id === 'q_gu') { $('q_dong').value = ''; fillDongs({ dong: '' }); }
+    compute();
+  });
+  // 칩: 구를 바꾸면 동 목록도 다시
+  panel.addEventListener('click', (e) => {
+    if (e.target.closest('[data-more]')) { shown += 30; compute(true); return; }
+    const g = CH.toggle(e);
+    if (!g) return;
+    if (g === 'q_gus') renderDongs(pickedDongs());
     compute();
   });
 
@@ -183,7 +216,7 @@
   // 판정 엔진과 같은 방식(취득 비용 + 이사비)으로 모자라는 돈만큼만 대출 (한도는 엔진이 다시 자른다)
   function loanFor(c, cash) {
     const closing = E.closingCosts({ price: c.price, regionId: c.regionId, homesAfter: 1, temporaryTwo: false, areaOver85: c.area > 85, firstTime: false,
-      publicPrice: c.price * 0.69, bondDiscount: (parseFloat($('bondDiscount').value) || 0) / 100, vat: true, propertyType: '아파트' }).total;
+      publicPrice: c.price * 0.69, bondDiscount: (parseFloat($('bondDiscount').value) || 0) / 100, vat: true, propertyType: c.kind || '아파트' }).total;
     const need = c.price + closing + (parseFloat($('moveCost').value) || 0) * MAN - cash;
     return Math.max(0, Math.ceil(need / MAN));
   }
@@ -194,7 +227,7 @@
     const net = netMonthly(p.annualIncome);
     const cash = defer ? f.cashDefer : f.cash;
     return {
-      purpose: '거주', regionId: c.regionId, propertyType: '아파트', price: Math.round(c.price / MAN), areaM2: c.area,
+      purpose: '거주', regionId: c.regionId, propertyType: c.kind || '아파트', price: Math.round(c.price / MAN), areaM2: c.area,
       jeonsePrice: c.jeonse ? Math.round(c.jeonse / MAN) : '', publicRatio: 69, recentTrades: String(Math.round(c.price / MAN)),
       parcelAddress: `${E.region(c.regionId).name} ${c.dong} ${c.jibun || ''}`.trim(),
       subwayWalkMin: loc.subway, jobCommuteMin: loc.commute, schoolWalkMin: loc.school,

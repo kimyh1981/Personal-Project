@@ -80,6 +80,10 @@
             </select>
           </label>
         </fieldset>
+        <fieldset data-footer="구를 고르지 않으면 서울 전체에서 찾습니다. 순위 메모에 적은 지역은 이 안에서 다시 좁힙니다. 빌라·오피스텔은 아파트가 아니라 서울 토지거래허가 대상이 아니어서, 세입자를 두고 나중에 입주하는 계획이 가능할 수 있습니다.">
+          <legend><span>찾을 지역 · 주택 종류 (여러 개 고르기)</span></legend>
+          <div class="pick-wrap" id="scopePickers"></div>
+        </fieldset>
         <fieldset data-footer="1순위는 기본 한도, 최대 한도까지 허용. 2순위는 기본 한도의 비율까지. 5순위는 고소득 한도. 월 상환은 대출 만기 기준 원리금입니다.">
           <legend><span>상환 능력</span></legend>
           <label class="f">월 상환 기본 <span class="unit">만원</span><input id="p_pay" type="number" step="10"></label>
@@ -123,6 +127,7 @@
 <script src="js/geo.js"></script>
 <script src="js/conditions.js"></script>
 <script src="js/tiers.js"></script>
+<script src="js/chips.js"></script>
 <script src="js/mymarket.js"></script>
 <script src="js/my.js"></script>
 </body>

@@ -896,3 +896,20 @@ button.rule-rank:active { opacity: .75; }
 .funds-sum { display: grid; gap: 4px; padding: 12px var(--pad); font-size: 14px; }
 .funds-sum p { margin: 0; }
 .funds-sum b { font-size: 16px; color: var(--tint); }
+/* 여러 개 고르기 칩 */
+.chips { display: grid; gap: 8px; }
+.chip-presets, .chip-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-preset { border: 1px dashed var(--tint); background: transparent; color: var(--tint); border-radius: 999px; padding: 5px 11px; font: 600 13px var(--font); cursor: pointer; }
+.pick { border: 1px solid var(--sep, rgba(0,0,0,.14)); background: var(--group); color: var(--label); border-radius: 999px; padding: 7px 12px; font: 14.5px var(--font); cursor: pointer; display: inline-flex; align-items: baseline; gap: 4px; }
+.pick small { font-size: 11px; color: var(--label-3); }
+.pick[aria-pressed="true"] { background: var(--tint); border-color: var(--tint); color: #fff; font-weight: 600; }
+.pick[aria-pressed="true"] small { color: rgba(255,255,255,.8); }
+.pick:active, .chip-preset:active { opacity: .7; }
+.pick-wrap { display: grid; gap: 8px; padding: 12px var(--pad); }
+.pick-wrap > p { margin: 4px 0 0; }
+.quick-pick { padding: 12px 14px; border-radius: 18px; background: var(--group); display: grid; gap: 8px; }
+.quick-pick h4 { margin: 0; font-size: 15px; } .quick-pick > p { margin: 0; font-size: 13px; }
+.quick-pick summary { cursor: pointer; font-weight: 600; font-size: 15px; }
+.quick-pick .dong-gu { margin: 8px 0 2px; font-weight: 600; }
+#q_pickers { display: grid; gap: 10px; }
+.q-more { width: 100%; margin-top: 8px; }

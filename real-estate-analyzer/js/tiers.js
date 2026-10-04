@@ -45,6 +45,8 @@
     buyDate: '', // 매수 시기 'YYYY-MM' (비우면 이번 달)
     nohomeSince: '', // 계속 무주택 시작일 (집을 보유 중이면 비운다). 실거주 유예 자격 판단
     permitAfter: 'extend', // 토지거래허가 지정 기간(2026-12-31) 뒤: extend(연장 가정) | lift(해제 가정)
+    regions: [], // 찾을 구 (비우면 서울 전체)
+    kinds: ['아파트'], // 찾을 주택 종류: 아파트 · 빌라(연립·다세대) · 오피스텔
     rateType: 'periodic', // 주담대 금리 유형: 스트레스 DSR 반영비율이 낮아 한도가 큰 주기형을 기본으로
   };
   const thisMonth = () => new Date().toISOString().slice(0, 7);
@@ -98,10 +100,11 @@
    * 5년 뒤 시세는 같은 동 단지 상승률을 적용할 때 가장 잘 맞았다(오차 5%, 구 상승률은 10%).
    * cands: [{ id, regionId, dong, area, price, count, builtYear, g5, g10 }]
    */
+  const dongKey = (c) => c.regionId + '|' + c.dong + (c.kind && c.kind !== '아파트' ? '|' + c.kind : '');
   function dongIndex(cands, thisYear = new Date().getFullYear()) {
     const by = new Map();
     for (const c of cands) {
-      const k = c.regionId + '|' + c.dong;
+      const k = dongKey(c); // 빌라·오피스텔은 종류별로 따로 (신축 시세·상승률이 아파트와 다르다)
       if (!by.has(k)) by.set(k, []);
       by.get(k).push(c);
     }
@@ -119,7 +122,9 @@
 
   function growth(c, reg, p, dong) {
     const avg = (a, b) => (a != null && b != null ? (a + b) / 2 : a != null ? a : b);
-    const regionG = reg ? avg(reg.cagr5, reg.cagr10) : null;
+    // 빌라·오피스텔은 같은 종류의 구 상승률 (없으면 아파트 구 상승률을 쓰지 않는다: 종류별 흐름이 달라서)
+    const kreg = c.kind && c.kind !== '아파트' ? (reg && reg.byKind && reg.byKind[c.kind]) || null : reg;
+    const regionG = kreg ? avg(kreg.cagr5, kreg.cagr10) : null;
     const complexG = avg(c.g5, c.g10);
     const dongG = dong && dong.g != null ? dong.g : null;
     const parts = [[complexG, 0.4], [dongG, 0.4], [regionG, 0.2]].filter((x) => x[0] != null);
@@ -302,7 +307,7 @@
         cashAvail: f.cash, taxShort: Math.max(0, costs - f.cash) };
     };
     if (p.residence !== 'defer') return now();
-    const rr = COND.residenceRule({ regionId: c.regionId, buyDate: p.buyDate || thisMonth(), nohomeSince: p.nohomeSince, tenant: true, permitAfter: p.permitAfter });
+    const rr = COND.residenceRule({ regionId: c.regionId, propertyType: c.kind || '아파트', buyDate: p.buyDate || thisMonth(), nohomeSince: p.nohomeSince, tenant: true, permitAfter: p.permitAfter });
     if (!rr.deferOK) return now(rr.why, rr, true);
     const J = c.jeonse || 0;
     if (!J) return now('같은 평형 전세 시세가 없어 세입자를 두고 사는 계획은 계산하지 못했습니다.', rr, true);
@@ -329,7 +334,7 @@
   function evaluate(c, p, reg, f, dong) {
     const years = Math.max(1, p.targetAge - p.age);
     const term = Math.max(years, p.loanTerm || years); // 만기가 60세보다 길면 남은 대출은 60세에 집을 팔아 갚는다
-    const costs = E.closingCosts({ price: c.price, regionId: c.regionId, homesAfter: 1, temporaryTwo: false, areaOver85: c.area > 85, firstTime: false, publicPrice: c.price * 0.69, vat: true, propertyType: '아파트' }).total;
+    const costs = E.closingCosts({ price: c.price, regionId: c.regionId, homesAfter: 1, temporaryTwo: false, areaOver85: c.area > 85, firstTime: false, publicPrice: c.price * 0.69, vat: true, propertyType: c.kind || '아파트' }).total;
     const bank = bankLimit(c.price, c.regionId, p, term);
     const pl = plan(c, p, f, bank, costs, term);
     const { need, loan, plus } = pl;
@@ -338,7 +343,7 @@
     const payPlus = E.pmt(plus, p.plusRate, term * 12);
     const payTotal = payBank + payPlus;
     const gr = growth(c, reg, p, dong);
-    const recon = c.builtYear && new Date().getFullYear() - c.builtYear >= 30;
+    const recon = (c.kind || '아파트') === '아파트' && c.builtYear && new Date().getFullYear() - c.builtYear >= 30;
     // 재건축 연한: 같은 동 신축 시세로 재건축 뒤 가치를 잡고 분담금을 뺀다. 같은 동에 신축이 없으면 +0.7%p로 대신
     const rb = recon ? rebuild(c, p, dong, gr.g, Math.max(1, p.targetAge - p.age)) : null;
     const gRecon = recon && !rb && (!dong || dong.newM2 == null) ? Math.min(0.08, gr.g + 0.007) : gr.g; // 같은 동 신축 정보가 없을 때만 +0.7%p
@@ -617,14 +622,16 @@
     if (e.plus > 0 && (!e.plan || e.plan.mode !== 'defer')) out.push(`은행 대출 한도 밖 ${Math.round(e.plus / MAN).toLocaleString()}만원을 추가 자금(연 ${(p.plusRate * 100).toFixed(1)}%)으로 마련해야 함`);
     if (e.loc.estimated) out.push('입지는 구 중심 기준 추정');
     const pl = e.plan || {};
+    if (e.c.kind === '빌라') out.push('빌라(연립·다세대): 같은 건물 거래가 적어 시세가 불확실하고 팔기 어려움 · 아파트가 아니라 서울 토지거래허가 대상은 아니지만, 정비구역·신속통합기획 후보지는 따로 허가 대상일 수 있어 필지 확인 필요');
+    if (e.c.kind === '오피스텔') out.push('오피스텔: 취득세 4.6% · 주거용이면 주택 수에 들어감 · 은행에 따라 비주택 담보대출로 한도가 달라질 수 있음 · 아파트가 아니라 토지거래허가 대상 아님');
     if (pl.taxShort > 0) out.push(`취득세·중개·등기 비용 ${Math.round(e.costs / MAN).toLocaleString()}만원을 낼 내 현금이 ${Math.round(pl.taxShort / MAN).toLocaleString()}만원 부족 (은행 대출로는 낼 수 없어 추가 자금 필요)`);
     if (e.extraCash > 0) out.push(`이 순위는 내 여유자금 ${e.extraCash >= EOK ? `${+(e.extraCash / EOK).toFixed(2)}억원` : `${Math.round(e.extraCash / MAN).toLocaleString()}만원`}을 더해 계산 (갚지 않는 내 돈으로 봄)`);
     if (pl.mode === 'defer') out.push(pl.rule && pl.rule.lifted ? `토지거래허가 해제 가정 (${P.RESIDENCE.landPermitUntil} 뒤, 연장 여부 미정) — 연장되면 이 계획은 불가` : pl.why);
     else if (pl.forced) out.push(`나중에 입주 불가 → 바로 입주로 계산: ${pl.why}`);
-    else if (E.region(e.c.regionId).landPermit) out.push(`토지거래허가구역: 허가 후 ${P.RESIDENCE.registerMonths}개월 안에 입주, ${P.RESIDENCE.stayYears}년 실거주`);
+    else if (E.region(e.c.regionId).landPermit && (e.c.kind || '아파트') === '아파트') out.push(`토지거래허가구역: 허가 후 ${P.RESIDENCE.registerMonths}개월 안에 입주, ${P.RESIDENCE.stayYears}년 실거주`);
     if (pl.mode === 'defer' && pl.plus > 0) out.push(`입주 때 전세금을 돌려주려면 전세퇴거자금 대출(${Math.round(P.RESIDENCE.jeonseReturnCap / EOK)}억 한도) 밖 ${Math.round(pl.plus / MAN).toLocaleString()}만원이 더 필요`);
     return out;
   }
 
-  return { DEFAULTS, TIERS, withExtra, parseMemo, memoOk, plan, defaultRules, rulesFor, retFor, funds, bankLimit, dongIndex, rebuild, reconAssume, normStage, redevIndex, matchProject, redevChance, oldRegisteredByGu, growth, location, retirement, balanceAfter, evaluate, classify, topN, cautions };
+  return { DEFAULTS, TIERS, withExtra, dongKey, parseMemo, memoOk, plan, defaultRules, rulesFor, retFor, funds, bankLimit, dongIndex, rebuild, reconAssume, normStage, redevIndex, matchProject, redevChance, oldRegisteredByGu, growth, location, retirement, balanceAfter, evaluate, classify, topN, cautions };
 });
