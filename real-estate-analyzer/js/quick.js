@@ -33,7 +33,11 @@
     panel.hidden = m !== 'mine';
     switchBtns.forEach((b) => b.setAttribute('aria-selected', String(b.dataset.mode === m)));
     if (m === 'mine') renderPanel();
-    else window.REA_FUTURE && window.REA_FUTURE.setPick(null);
+    else {
+      window.REA_FUTURE && window.REA_FUTURE.setPick(null);
+      currentId = null; $('quickNav').hidden = true; $('peekOpen').textContent = '결과 보기';
+      if (window.REA_LAST) document.dispatchEvent(new CustomEvent('rea:updated', { detail: window.REA_LAST })); // 아래 막대를 상세 입력 판정으로
+    }
   }
   switchBtns.forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
 
@@ -50,6 +54,7 @@
   }
 
   let profile = null, list = [];
+  let navIds = [], navSets = { inIds: [], outIds: [] }, currentId = null; // 목록에 보이는 단지 순서와 지금 판정 중인 단지 (판정 화면에서 이전·다음·목록으로)
   function settings() {
     const q = load(QUICK_KEY, {});
     const buy = q.buy || profile.buyDate || thisMonth();
@@ -144,11 +149,7 @@
     // 판정 점수: 목록에 보이는 단지마다 판정 엔진으로 계산 (단지·시기·지역이 바뀌면 점수도 바뀐다)
     const verdictOf = new Map();
     if (window.REA_APP) for (const e of [...inTier.slice(0, shown), ...outside.slice(0, shown)]) verdictOf.set(e.c.id, window.REA_APP.scoreFor(valuesFor(e, p, buy, move, locationSync(e.c))));
-    // 아래 막대: 고른 단지가 없으면 '단지를 누르면 판정'
-    const pk = window.REA_FUTURE && window.REA_FUTURE.pick;
-    if (!pk || !list.some((e) => e.c.id === pk.id)) {
-      $('peekScore').textContent = '—'; $('peekLabel').textContent = '단지를 누르면 그 단지로 판정합니다'; $('peek').dataset.tone = 'warning';
-    }
+    if (currentId && !list.some((e) => e.c.id === currentId)) currentId = null;
     const why = (e) => (e.plus > 0 ? `추가 자금 ${won(e.plus)} 필요` : e.payTotal > p.payMax ? `월 상환 ${manw(e.payTotal)} (최대 ${manw(p.payMax)} 초과)` : e.loc.score < 45 && !e.loc.estimated ? '입지 기준 미달' : e.c.area < p.minArea ? '면적 기준 미달' : '노후 목표 미달');
     const row = (e) => {
       const c = e.c, t = tierOf.get(c.id), defer = e.plan.mode === 'defer', v = verdictOf.get(c.id);
@@ -165,8 +166,57 @@
     };
     $('q_list').innerHTML = `<p class="muted">${esc(gus.join('·'))}${dongs.length ? ` (${esc(dongs.map((d) => d.split('|')[1]).join('·'))})` : ''} · ${esc(kinds.join('·'))} 단지·평형 ${subset.length.toLocaleString()}곳 중 내 조건으로 순위에 드는 곳 <b>${inTier.length.toLocaleString()}곳</b> (이번 주 서울 실거래 ${esc(M.market.asOf.slice(0, 10))} 기준). 왼쪽 숫자는 그 단지로 계산한 판정 점수입니다${[...verdictOf.values()].some(Boolean) && inTier.some((e) => locationSync(e.c).estimated) ? ' (역·학교 거리를 아직 확인하지 않은 단지는 10분으로 추정)' : ''}.</p>
       ${inTier.length ? `<ol class="q-list">${inTier.slice(0, shown).map(row).join('')}</ol>${inTier.length > shown ? `<button type="button" class="ghost q-more" data-more>더 보기 (${Math.min(30, inTier.length - shown)}곳 더 · 남은 ${(inTier.length - shown).toLocaleString()}곳)</button>` : ''}` : `<p>이 지역·종류에는 이번 주 내 조건(순위 기준)에 맞는 곳이 없습니다.${kinds.some((k) => M.kindStatus()[k] !== 'ok') ? ` (${esc(kinds.filter((k) => M.kindStatus()[k] !== 'ok').join('·'))}는 아직 실거래 데이터가 없습니다)` : ''} 다른 동·구를 고르거나 매수 시기를 바꿔 보세요.</p>`}
-      ${outside.length ? `<details class="q-out"><summary>조건 밖 ${outside.length.toLocaleString()}곳 (가격 낮은 순)</summary><ol class="q-list">${outside.slice(0, shown).map(row).join('')}</ol></details>` : ''}`;
+      ${outside.length ? `<details class="q-out"${outside.slice(0, shown).some((e) => e.c.id === currentId) ? ' open' : ''}><summary>조건 밖 ${outside.length.toLocaleString()}곳 (가격 낮은 순)</summary><ol class="q-list">${outside.slice(0, shown).map(row).join('')}</ol></details>` : ''}`;
+    // 이전·다음은 누른 단지가 있는 목록(순위에 드는 곳 / 조건 밖) 안에서만
+    const ids = (sel) => [...$('q_list').querySelectorAll(sel)].map((b) => b.dataset.cid);
+    const inIds = ids(':scope > ol.q-list .q-item'), outIds = ids('.q-out .q-item');
+    navIds = currentId && outIds.includes(currentId) ? outIds : inIds;
+    navSets = { inIds, outIds };
+    markCurrent();
+    peekForList();
+    renderNav();
   }
+  // 아래 막대: 단지를 고르기 전에는 '목록 보기'(목록으로 이동), 고른 뒤에는 그 단지 판정
+  function peekForList() {
+    if (currentId || panel.hidden) return;
+    $('peekScore').textContent = '—';
+    $('peekLabel').textContent = `목록 ${navIds.length}곳 · 단지를 누르면 판정`;
+    $('peek').dataset.tone = 'warning';
+    $('peekOpen').textContent = '목록 보기';
+  }
+  const markCurrent = () => panel.querySelectorAll('.q-item').forEach((b) => b.classList.toggle('q-current', b.dataset.cid === currentId));
+  // 판정 화면 위의 이동 막대: ‹ 이전 · 목록으로 (3/30) · 다음 ›
+  function renderNav() {
+    const nav = $('quickNav'), k = navIds.indexOf(currentId);
+    if (panel.hidden || k < 0) { nav.hidden = true; return; }
+    const e = list.find((x) => x.c.id === currentId);
+    nav.hidden = false;
+    nav.innerHTML = `<button type="button" data-qnav="prev"${k ? '' : ' disabled'}>‹ 이전</button>
+      <button type="button" data-qnav="list" class="qn-list"><b>목록으로</b><small>${k + 1} / ${navIds.length}${e ? ` · ${esc(e.c.name)}` : ''}</small></button>
+      <button type="button" data-qnav="next"${k < navIds.length - 1 ? '' : ' disabled'}>다음 ›</button>`;
+  }
+  function backToList() {
+    const toInputs = document.querySelector('#appbar [data-view="inputs"]');
+    if (toInputs && getComputedStyle($('appbar')).display !== 'none') toInputs.click();
+    requestAnimationFrame(() => {
+      const b = panel.querySelector(`.q-item[data-cid="${CSS.escape(currentId || '')}"]`);
+      if (b) { const d = b.closest('details'); if (d) d.open = true; b.scrollIntoView({ block: 'center' }); b.classList.add('q-flash'); setTimeout(() => b.classList.remove('q-flash'), 1200); }
+      else $('q_list').scrollIntoView({ block: 'start' });
+    });
+  }
+  $('quickNav').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-qnav]'); if (!b || b.disabled) return;
+    if (b.dataset.qnav === 'list') { backToList(); return; }
+    const k = navIds.indexOf(currentId) + (b.dataset.qnav === 'next' ? 1 : -1);
+    const e = list.find((x) => x.c.id === navIds[k]);
+    if (e) apply(e);
+  });
+  // 내 조건으로 찾기에서 단지를 고르기 전 '목록 보기'는 목록으로 내려간다 (판정 화면으로 가지 않음)
+  document.addEventListener('click', (ev) => {
+    if (!ev.target.closest('#peekOpen') || panel.hidden || currentId) return;
+    ev.stopPropagation(); ev.preventDefault();
+    $('q_list').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, true);
 
   // 이 칸들은 판정 입력이 아니다: 상세 입력 폼의 재계산(아래 막대 점수)을 깨우지 않게 여기서 멈춘다
   panel.addEventListener('input', (e) => { if (e.target.id && e.target.id.startsWith('q_')) e.stopPropagation(); });
@@ -256,6 +306,10 @@
       if (el.type === 'checkbox') el.checked = !!v; else el.value = v;
     }
     window.REA_FUTURE && window.REA_FUTURE.setPick(c.id, p);
+    currentId = c.id;
+    navIds = navSets.outIds.includes(c.id) ? navSets.outIds : navSets.inIds;
+    markCurrent(); renderNav();
+    $('peekOpen').textContent = '판정 보기';
     form.dispatchEvent(new Event('change', { bubbles: true }));
     const note = $('q_applied');
     if (note) note.remove();
