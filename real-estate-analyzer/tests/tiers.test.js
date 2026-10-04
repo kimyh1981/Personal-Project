@@ -275,3 +275,14 @@ test('순위별 내 여유자금: 그 순위만 현금을 늘려 다시 평가�
   assert.ok(t1.items.every((x) => !x.e.extraCash));
   assert.ok(T.cautions(t4b.items[0].e, p1).some((s) => /여유자금/.test(s)));
 });
+
+test('추가 동원 가능 자금: 내 기준 현금에 더해 모든 순위 계산에 쓰인다', () => {
+  const a = T.funds(profile()), b = T.funds(profile({ extraFunds: 2 * EOK, tempHousing: 8000 * MAN }));
+  assert.equal(b.add, 2 * EOK);
+  assert.equal(b.cash, a.cash + 2 * EOK);
+  assert.equal(b.cashDefer, b.cash - 8000 * MAN);
+  const c = cand({ name: '12억', price: 12 * EOK });
+  const e1 = T.evaluate(c, profile(), reg, a), e2 = T.evaluate(c, profile({ extraFunds: 2 * EOK }), reg, b);
+  assert.equal(Math.round(e1.need - e2.need), 2 * EOK);
+  assert.ok(e2.loan < e1.loan);
+});

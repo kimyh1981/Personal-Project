@@ -67,7 +67,7 @@
     const s = settings(), f = T.funds(profile);
     panel.innerHTML = `
       <div class="quick-head">
-        <p><b>${esc(profile.name ? profile.name + ' 님 조건' : '내 조건')}</b> · 바로 입주 현금 ${won(f.cash)}${f.temp ? ` · 나중에 입주 현금 ${won(f.cashDefer)}` : ''} · 월 상환 ${manw(profile.pay)}${profile.payMax > profile.pay ? `(최대 ${manw(profile.payMax)})` : ''}${profile.annualIncome ? ` · 연소득 ${won(profile.annualIncome)}` : ''}</p>
+        <p><b>${esc(profile.name ? profile.name + ' 님 조건' : '내 조건')}</b> · 바로 입주 현금 ${won(f.cash)}${f.add ? ` (추가 동원 ${won(f.add)} 포함)` : ''}${f.temp ? ` · 나중에 입주 현금 ${won(f.cashDefer)}` : ''} · 월 상환 ${manw(profile.pay)}${profile.payMax > profile.pay ? `(최대 ${manw(profile.payMax)})` : ''}${profile.annualIncome ? ` · 연소득 ${won(profile.annualIncome)}` : ''}</p>
         <a href="my.html#myProfileCard">내 기준 고치기 ›</a>
       </div>
       <div class="quick-form">
