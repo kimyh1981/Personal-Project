@@ -58,8 +58,10 @@
     const sellCosts = homes.reduce((s, h) => s + (h.value ? E.brokerFee(h.value, 'sale', true) : 0), 0);
     const cash = equity - sellCosts - (p.cgtReserve || 0) - (p.cashReserve || 0);
     const temp = p.tempHousing || 0;
-    return { equity, sellCosts, cgt: p.cgtReserve || 0, reserve: p.cashReserve || 0, cash, temp, cashDefer: cash - temp };
+    return { equity, sellCosts, cgt: p.cgtReserve || 0, reserve: p.cashReserve || 0, cash, temp, cashDefer: cash - temp, extra: 0 };
   }
+  // 순위별 내 여유자금(추가로 동원할 내 돈)을 더한 자금
+  const withExtra = (f, extra) => (extra > 0 ? { ...f, extra, cash: f.cash + extra, cashDefer: f.cashDefer + extra } : f);
 
   /**
    * 은행 주담대 한도 (서울: 규제지역, 매수 시점 무주택 = 두 채 먼저 매도).
@@ -355,7 +357,7 @@
     const retHome = retirement(v60, 0, p, years, debt60); // 저축 없이 집만으로 (4순위)
     const loc = location(c);
     return {
-      c, years, term, debt60, saveMonthly, save60, costs, need, bank, loan, plus, payBank, payPlus, payTotal, plan: pl, growth: gr, recon, gRecon, rebuild: rb, leftover,
+      c, years, term, debt60, saveMonthly, save60, costs, need, bank, loan, plus, payBank, payPlus, payTotal, plan: pl, extraCash: f.extra || 0, growth: gr, recon, gRecon, rebuild: rb, leftover,
       v60, v60r, cash60, ret, retRecon, retCash, loc,
       retHome, ratioHome: retHome.monthly / p.retireNeed,
       ratio: ret.monthly / p.retireNeed, ratioRecon: retRecon.monthly / p.retireNeed, ratioCash: retCash.monthly / p.retireNeed,
@@ -502,9 +504,10 @@
     return Object.fromEntries(Object.entries(d).map(([id, r]) => {
       const o = ov[id] || {};
       const m = { ...r, id };
-      for (const k of ['loan', 'pay', 'minPct', 'recon']) if (o[k] !== undefined && o[k] !== null && o[k] !== '') m[k] = o[k];
+      for (const k of ['loan', 'pay', 'minPct', 'recon', 'extra']) if (o[k] !== undefined && o[k] !== null && o[k] !== '') m[k] = o[k];
       m.comment = o.comment || '';
-      m.custom = ['loan', 'pay', 'minPct', 'recon'].some((k) => o[k] !== undefined && o[k] !== null && o[k] !== '');
+      m.extra = Math.max(0, Number(m.extra) || 0); // 이 순위에만 더하는 내 여유자금 (갚지 않는 내 돈)
+      m.custom = ['loan', 'pay', 'minPct', 'recon', 'extra'].some((k) => o[k] !== undefined && o[k] !== null && o[k] !== '');
       return [id, m];
     }));
   }
@@ -516,13 +519,26 @@
   const valueFor = (r, e) => retFor(r, e).monthly / e.pRetireNeed;
 
   // 순위별 조건과 점수. 입지 점수 45점 미만은 모든 순위에서 뺀다 (교통·상권·인프라는 기본 조건)
-  function classify(evals, p) {
+  /**
+   * reeval(extra): 순위에 내 여유자금을 넣었을 때 그만큼 현금을 늘려 다시 평가한 목록 (없으면 여유자금은 무시)
+   */
+  function classify(evals, p, reeval) {
     const MIN_LOC = 45;
     const R = rulesFor(p);
     // locEstimatedOk: 지역을 직접 고른 경우(내 조건으로 찾기) 구 중심 추정 입지는 빼지 않는다 (실제로 확인한 입지만 기준 적용)
     const locOk = (e) => e.loc.score >= MIN_LOC || (p.locEstimatedOk && e.loc.estimated);
-    const ok = evals.filter((e) => locOk(e) && e.c.area >= p.minArea && e.c.area <= p.maxArea && e.c.count >= 1);
-    ok.forEach((e) => { e.pRetireNeed = p.retireNeed; });
+    const keep = (list) => {
+      const out = list.filter((e) => locOk(e) && e.c.area >= p.minArea && e.c.area <= p.maxArea && e.c.count >= 1);
+      out.forEach((e) => { e.pRetireNeed = p.retireNeed; });
+      return out;
+    };
+    const ok = keep(evals);
+    const okCache = new Map([[0, ok]]);
+    const okFor = (r) => {
+      const x = reeval ? r.extra || 0 : 0;
+      if (!okCache.has(x)) okCache.set(x, keep(reeval(x)));
+      return okCache.get(x);
+    };
     const dongNames = [...new Set(evals.map((e) => e.c.dong))];
     const FL = Object.fromEntries(TIERS.map((t) => [t.id, parseMemo(R[t.id].comment, dongNames)]));
     const money = (r, e) => (LOAN_OK[r.loan] || LOAN_OK.any)(e) && (r.pay == null || e.payTotal <= r.pay)
@@ -542,7 +558,7 @@
     const out = {};
     for (const t of TIERS) {
       const r = R[t.id];
-      const list = ok.filter((e) => pass(r, e)).map((e) => ({ e, score: score(r, e), value: valueFor(r, e) }));
+      const list = okFor(r).filter((e) => pass(r, e)).map((e) => ({ e, score: score(r, e), value: valueFor(r, e) }));
       list.sort((a, b) => b.score - a.score || b.value - a.value);
       out[t.id] = list;
     }
@@ -552,7 +568,7 @@
       if (out[t.id].length) continue;
       const r = R[t.id];
       let best = null;
-      for (const e of ok) if (base(r, e) && (!best || valueFor(r, e) > valueFor(r, best))) best = e;
+      for (const e of okFor(r)) if (base(r, e) && (!best || valueFor(r, e) > valueFor(r, best))) best = e;
       nearest[t.id] = best ? { name: best.c.name, regionId: best.c.regionId, price: best.c.price, value: valueFor(r, best), monthly: retFor(r, best).monthly } : null;
     }
     // vsBest: 1~4순위 최고 미래가치보다 그 배수 이상 (기본 5순위 1.3배)
@@ -565,7 +581,7 @@
       if (out[t.id].length || !hasRegion(fl)) continue;
       const r = R[t.id];
       const vs = r.vsBest ? best14 * r.vsBest : 0;
-      alt[t.id] = regionAlternatives(ok.filter((e) => money(r, e) && memoOk(e, fl, true) && goal(r, e) && valueFor(r, e) >= vs));
+      alt[t.id] = regionAlternatives(okFor(r).filter((e) => money(r, e) && memoOk(e, fl, true) && goal(r, e) && valueFor(r, e) >= vs));
     }
     return { tiers: TIERS.map((t) => ({ ...t, rule: R[t.id], memo: FL[t.id], items: out[t.id], nearest: nearest[t.id] || null, regionAlt: alt[t.id] || null })), considered: evals.length, kept: ok.length, best14 };
   }
@@ -597,6 +613,7 @@
     if (e.plus > 0 && (!e.plan || e.plan.mode !== 'defer')) out.push(`은행 대출 한도 밖 ${Math.round(e.plus / MAN).toLocaleString()}만원을 추가 자금(연 ${(p.plusRate * 100).toFixed(1)}%)으로 마련해야 함`);
     if (e.loc.estimated) out.push('입지는 구 중심 기준 추정');
     const pl = e.plan || {};
+    if (e.extraCash > 0) out.push(`이 순위는 내 여유자금 ${e.extraCash >= EOK ? `${+(e.extraCash / EOK).toFixed(2)}억원` : `${Math.round(e.extraCash / MAN).toLocaleString()}만원`}을 더해 계산 (갚지 않는 내 돈으로 봄)`);
     if (pl.mode === 'defer') out.push(pl.rule && pl.rule.lifted ? `토지거래허가 해제 가정 (${P.RESIDENCE.landPermitUntil} 뒤, 연장 여부 미정) — 연장되면 이 계획은 불가` : pl.why);
     else if (pl.forced) out.push(`나중에 입주 불가 → 바로 입주로 계산: ${pl.why}`);
     else if (E.region(e.c.regionId).landPermit) out.push(`토지거래허가구역: 허가 후 ${P.RESIDENCE.registerMonths}개월 안에 입주, ${P.RESIDENCE.stayYears}년 실거주`);
@@ -604,5 +621,5 @@
     return out;
   }
 
-  return { DEFAULTS, TIERS, parseMemo, memoOk, plan, defaultRules, rulesFor, retFor, funds, bankLimit, dongIndex, rebuild, reconAssume, normStage, redevIndex, matchProject, redevChance, oldRegisteredByGu, growth, location, retirement, balanceAfter, evaluate, classify, topN, cautions };
+  return { DEFAULTS, TIERS, withExtra, parseMemo, memoOk, plan, defaultRules, rulesFor, retFor, funds, bankLimit, dongIndex, rebuild, reconAssume, normStage, redevIndex, matchProject, redevChance, oldRegisteredByGu, growth, location, retirement, balanceAfter, evaluate, classify, topN, cautions };
 });

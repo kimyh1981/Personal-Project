@@ -56,8 +56,9 @@
   function evaluate(c, p, f = T.funds(p)) {
     return T.evaluate(c, p, market.regions[c.regionId], f, dongOf(c));
   }
-  function evaluateAll(p, list = prepare().all) {
-    const f = T.funds(p);
+  // extra: 순위에 넣은 내 여유자금 (그만큼 현금을 늘려 평가)
+  function evaluateAll(p, list = prepare().all, extra = 0) {
+    const f = T.withExtra(T.funds(p), extra);
     return list.map((c) => evaluate(c, p, f));
   }
 

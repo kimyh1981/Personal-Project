@@ -257,3 +257,21 @@ test('메모 지역 조건: 그 지역에 추천이 없으면 같은 조건으�
   assert.equal(t3.regionAlt[0].n, 2);
   assert.deepEqual(t3.regionAlt[0].dongs.map((x) => x.dong).sort(), ['가락동', '잠실동']);
 });
+
+test('순위별 내 여유자금: 그 순위만 현금을 늘려 다시 평가하고, 다른 순위는 그대로', () => {
+  const p0 = profile({ annualIncome: 1 * EOK });
+  const cs = [cand({ name: '9억', price: 9 * EOK }), cand({ name: '11억', price: 11 * EOK }), cand({ name: '13억', price: 13 * EOK })];
+  const ev = (p) => (x) => cs.map((c) => T.evaluate(c, p, reg, T.withExtra(T.funds(p), x)));
+  const without = T.classify(ev(p0)(0), p0, ev(p0));
+  const p1 = profile({ annualIncome: 1 * EOK, tierRules: { t4: { extra: 4 * EOK } } });
+  const withExtra = T.classify(ev(p1)(0), p1, ev(p1));
+  const t4a = without.tiers.find((t) => t.id === 't4'), t4b = withExtra.tiers.find((t) => t.id === 't4');
+  assert.ok(t4b.items.length > t4a.items.length); // 대출 없이 살 수 있는 곳이 늘어난다
+  assert.ok(t4b.items.every((x) => x.e.extraCash === 4 * EOK));
+  assert.equal(t4b.rule.extra, 4 * EOK);
+  assert.ok(t4b.rule.custom);
+  // 다른 순위 계산은 여유자금 없이
+  const t1 = withExtra.tiers.find((t) => t.id === 't1');
+  assert.ok(t1.items.every((x) => !x.e.extraCash));
+  assert.ok(T.cautions(t4b.items[0].e, p1).some((s) => /여유자금/.test(s)));
+});
