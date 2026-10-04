@@ -63,7 +63,7 @@
     const st = M.kindStatus();
     return `<div class="quick-pick"><h4>구 <span class="muted">여러 개 고를 수 있음</span></h4>${CH.html('q_gus', GU.map((g) => ({ value: g, label: g })), s.gus, { presets: CH.SEOUL_GROUPS.slice(1) })}</div>
       <div class="quick-pick"><h4>주택 종류</h4>${CH.html('q_kinds', M.KINDS.map((k) => ({ value: k, label: k, note: kindNote(k, st) })), s.kinds)}
-        ${M.KINDS.some((k) => st[k] !== 'ok') ? `<p class="muted">빌라(연립·다세대)·오피스텔 실거래는 공공데이터포털에서 '국토교통부_연립다세대 매매·전월세 실거래가', '국토교통부_오피스텔 매매·전월세 실거래가' 4개를 활용신청하면 다음 주 자동 수집부터 함께 찾습니다.</p>` : ''}</div>
+        ${M.KINDS.some((k) => st[k] !== 'ok') ? `<p class="muted">빌라(연립·다세대)·단독주택(단독·다가구) 실거래는 공공데이터포털에서 '국토교통부_연립다세대 매매·전월세 실거래가 자료', '국토교통부_단독/다가구 매매·전월세 실거래가 자료'를 활용신청하면 다음 주 자동 수집부터 함께 찾습니다.</p>` : ''}</div>
       <details class="quick-pick" id="q_dongWrap"${s.dongs.length ? ' open' : ''}><summary>동 고르기 <span class="muted">${s.dongs.length ? `${s.dongs.length}곳 선택` : '안 고르면 고른 구 전체'}</span></summary><div id="q_dongs"></div></details>`;
   }
   // 고른 구의 동 칩 (같은 이름의 동이 여러 구에 있어 '구|동'으로 구별)

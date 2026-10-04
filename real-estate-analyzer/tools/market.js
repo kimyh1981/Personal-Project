@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * 서울 주택 시장 스냅샷 (웹 버전 '내 맞춤 추천'용, 매주 갱신). 아파트 + (활용신청돼 있으면) 연립·다세대(빌라)·오피스텔.
+ * 서울 주택 시장 스냅샷 (웹 버전 '내 맞춤 추천'용, 매주 갱신). 아파트 + (활용신청돼 있으면) 연립·다세대(빌라)·단독·다가구.
  * 개인정보는 들어가지 않는다. 서울 25개 구의 국토부 실거래가로 단지·평형별 후보와 장기 상승률을 만든다.
  *   - 최근 6개월 매매·전월세 → 후보(중위가·전세 중위·거래 건수·준공연도)
  *   - 5년 전·10년 전 같은 시기 3개월 매매 → 단지별·구별 ㎡당 연평균 상승률(CAGR)
@@ -14,14 +14,21 @@ const E = require('../js/engine.js');
 const RECO = require('../js/recommend.js');
 
 const API = 'https://apis.data.go.kr/1613000/';
-// 주택 종류별 실거래 API. 빌라·오피스텔은 공공데이터포털에서 따로 활용신청해야 하고, 없으면 건너뛴다.
-// 응답의 단지명 태그만 다르다(mhouseNm·offiNm) → 아파트 파서가 읽는 aptNm으로 바꿔 같은 파서를 쓴다.
-const KINDS = [
-  { kind: '아파트', trade: API + 'RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade', rent: API + 'RTMSDataSvcAptRent/getRTMSDataSvcAptRent', history: true },
-  { kind: '빌라', trade: API + 'RTMSDataSvcRHTrade/getRTMSDataSvcRHTrade', rent: API + 'RTMSDataSvcRHRent/getRTMSDataSvcRHRent', name: 'mhouseNm', history: false },
-  { kind: '오피스텔', trade: API + 'RTMSDataSvcOffiTrade/getRTMSDataSvcOffiTrade', rent: API + 'RTMSDataSvcOffiRent/getRTMSDataSvcOffiRent', name: 'offiNm', history: false },
-];
+// 주택 종류별 실거래 API. 빌라·단독주택은 공공데이터포털에서 따로 활용신청해야 하고, 없으면 건너뛴다.
+// 응답을 아파트 파서가 읽는 모양으로 바꿔 같은 파서를 쓴다:
+//  빌라(연립·다세대): 단지명 태그 mhouseNm → aptNm
+//  단독·다가구: 이름이 없고 지번이 가려져 있어 '동 + 유형 + 연면적 30㎡ 구간'을 묶음 이름으로 쓰고, 연면적을 면적으로 쓴다
 const asApt = (tagName) => (body) => (tagName ? body.replace(new RegExp(`<(/?)${tagName}>`, 'g'), '<$1aptNm>') : body);
+const asHouse = (body) => body.replace(/<item>([\s\S]*?)<\/item>/g, (m, it) => {
+  const t = (k) => ((it.match(new RegExp(`<${k}>([\\s\\S]*?)</${k}>`)) || [])[1] || '').trim();
+  const band = Math.max(1, Math.round((Number(t('totalFloorAr')) || 0) / 30)) * 30;
+  return `<item>${it.replace(/<(\/?)totalFloorAr>/g, '<$1excluUseAr>')}<aptNm>${t('umdNm')} ${t('houseType') || '단독'} 연면적 ${band}㎡대</aptNm></item>`;
+});
+const KINDS = [
+  { kind: '아파트', trade: API + 'RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade', rent: API + 'RTMSDataSvcAptRent/getRTMSDataSvcAptRent', history: true, prep: (b) => b },
+  { kind: '빌라', trade: API + 'RTMSDataSvcRHTrade/getRTMSDataSvcRHTrade', rent: API + 'RTMSDataSvcRHRent/getRTMSDataSvcRHRent', history: false, prep: asApt('mhouseNm') },
+  { kind: '단독주택', trade: API + 'RTMSDataSvcSHTrade/getRTMSDataSvcSHTrade', rent: API + 'RTMSDataSvcSHRent/getRTMSDataSvcSHRent', history: false, prep: asHouse },
+];
 
 function get(url) {
   return new Promise((resolve, reject) => {
@@ -83,13 +90,16 @@ async function build(key, now = new Date()) {
   let calls = 0, failed = 0;
   const perM2 = (list) => median(list.filter((t) => t.area && t.price).map((t) => t.price / t.area));
   for (const K of KINDS) {
-    // 빌라·오피스텔은 한 번 시험 호출해 활용신청이 안 돼 있으면 건너뛴다
+    // 빌라·단독주택은 한 번 시험 호출해 활용신청이 안 돼 있으면 건너뛴다
     if (K.kind !== '아파트') {
-      try { await month(K.trade, key, regions[0].lawd, recent[0], (b) => E.parseRtmsXml(asApt(K.name)(b))); calls++; }
+      try { await month(K.trade, key, regions[0].lawd, recent[0], (b) => E.parseRtmsXml(K.prep(b))); calls++; }
       catch (err) { kinds[K.kind] = err.unregistered ? '활용신청 필요' : `조회 실패: ${err.message}`; continue; }
     }
     kinds[K.kind] = 'ok';
-    const parseT = (b) => E.parseRtmsXml(asApt(K.name)(b)), parseR = (b) => E.parseRtmsRentXml(asApt(K.name)(b));
+    const parseT = (b) => E.parseRtmsXml(K.prep(b)), parseR = (b) => E.parseRtmsRentXml(K.prep(b));
+    // 전월세는 따로 활용신청: 안 돼 있으면 매매만 모은다 (전세 시세 없음 → 세입자 두고 사는 계획은 계산 못 함)
+    let rentOk = true;
+    try { await month(K.rent, key, regions[0].lawd, recent[0], parseR); calls++; } catch (err) { if (err.unregistered) { rentOk = false; kinds[K.kind + ' 전월세'] = '활용신청 필요'; } }
     await pool(regions.map((r) => async () => {
       const take = async (base, yms, parse) => {
         const res = [];
@@ -99,7 +109,7 @@ async function build(key, now = new Date()) {
         return res;
       };
       const sales = await take(K.trade, recent, parseT);
-      const rents = await take(K.rent, recent, parseR);
+      const rents = rentOk ? await take(K.rent, recent, parseR) : [];
       const s5 = await take(K.trade, old5, parseT);
       const s10 = K.history ? await take(K.trade, old10, parseT) : [];
       const nowM2 = perM2(sales);
@@ -129,7 +139,7 @@ async function build(key, now = new Date()) {
   };
 }
 
-module.exports = { build, monthsBack, cagr, month, KINDS, asApt };
+module.exports = { build, monthsBack, cagr, month, KINDS, asApt, asHouse };
 
 if (require.main === module) {
   (async () => {
