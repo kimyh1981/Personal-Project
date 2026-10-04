@@ -913,3 +913,11 @@ button.rule-rank:active { opacity: .75; }
 .quick-pick .dong-gu { margin: 8px 0 2px; font-weight: 600; }
 #q_pickers { display: grid; gap: 10px; }
 .q-more { width: 100%; margin-top: 8px; }
+/* 숫자 칸 지우기 × */
+.clr { flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; margin-left: 6px; padding: 0; border: 0; border-radius: 50%; background: var(--label-3, #8e8e93); color: var(--group, #fff); font: 700 15px/1 var(--font); cursor: pointer; opacity: .55; -webkit-tap-highlight-color: transparent; }
+.clr:hover, .clr:active { opacity: .9; }
+.clr[hidden] { display: none; }
+.f > .clr { order: 3; }
+.rule-ctl label, .redev-form label { position: relative; }
+.rule-ctl .clr, .redev-form .clr { position: absolute; right: 7px; bottom: 7px; margin: 0; width: 20px; height: 20px; font-size: 13px; }
+.rule-ctl input[type=number], .redev-form input[type=number] { padding-right: 30px; }
