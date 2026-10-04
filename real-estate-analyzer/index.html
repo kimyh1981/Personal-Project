@@ -25,7 +25,7 @@
 <div class="app">
   <header class="masthead">
     <div>
-      <p class="eyebrow">한국 아파트 · 실거주 1주택 기준 · 규정 기준일 <span id="asOf">2026-09-25</span></p>
+      <p class="eyebrow">한국 아파트 · 실거주 1주택 기준 · 규정 기준일 <span id="asOf">2026-10-01</span></p>
       <h1>실거주 매수 판단기</h1>
     </div>
     <a class="card my-link" href="my.html"><span><b style="color:inherit">내 맞춤 추천</b> <span class="muted">· 매주 갱신</span></span><b>열기 ›</b></a>
@@ -35,7 +35,12 @@
 
   <div class="layout" data-view="results">
     <form id="inputs" class="panel" autocomplete="off">
-      <fieldset data-footer="목적에 따라 대출·세금·실거주 의무와 평가 기준이 달라집니다.">
+      <div class="mode-switch" role="tablist" aria-label="조건 입력 방식">
+        <button type="button" role="tab" data-mode="detail" aria-selected="true">상세 입력</button>
+        <button type="button" role="tab" data-mode="mine" aria-selected="false">내 조건으로 찾기</button>
+      </div>
+      <section id="quickPanel" class="quick" hidden></section>
+      <fieldset data-footer="목적에 따라 대출·세금·실거주 의무와 평가 기준이 달라집니다. 서울 아파트는 토지거래허가로 바로 입주해야 하고, 세입자 있는 집의 입주 유예는 2026-05-12부터 계속 무주택인 사람만 받을 수 있습니다.">
         <legend><span class="ico" style="--ico:#007aff" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></span><span>목적·시기</span></legend>
         <label class="f wide">매수 목적
           <select id="purpose">
@@ -49,6 +54,13 @@
         <div class="checks wide">
           <label><input id="assumeTenant" type="checkbox"> 세입자 승계 (전세 낀 매수)</label>
         </div>
+        <label class="f">무주택 시작일 <span class="unit">계속 무주택일 때 · 비우면 집 보유 중</span><input id="nohomeSince" type="date"></label>
+        <label class="f">토지거래허가 기간(2026-12-31) 뒤
+          <select id="permitAfter">
+            <option value="extend" selected>연장된다고 보기</option>
+            <option value="lift">해제된다고 보기</option>
+          </select>
+        </label>
       </fieldset>
 
       <fieldset data-footer="금액은 만원 단위입니다. 지번 주소를 넣으면 필지의 토지거래허가·정비구역을 최신 공공데이터로 확인합니다.">
@@ -249,6 +261,7 @@
     <main class="results">
       <section id="verdict" class="verdict" aria-live="polite"></section>
       <section id="kpis" class="kpis"></section>
+      <section id="future" class="card future" hidden aria-live="polite"></section>
 
       <nav class="tabs" role="tablist">
         <button role="tab" data-tab="conditions" aria-selected="true">조건 점검</button>
@@ -361,7 +374,11 @@
 <script src="js/geo.js"></script>
 <script src="js/recommend.js"></script>
 <script src="js/charts.js"></script>
+<script src="js/tiers.js"></script>
+<script src="js/mymarket.js"></script>
 <script src="js/app.js"></script>
+<script src="js/future.js"></script>
+<script src="js/quick.js"></script>
 <script src="js/pwa.js"></script>
 </body>
 </html>

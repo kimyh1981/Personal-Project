@@ -201,7 +201,7 @@
     return {
       purpose: V.purpose || null, regionId: V.regionId || null, propertyType: V.propertyType || null,
       areaM2: num('areaM2'), price: num('price', MAN), recentTrades: trades, jeonse: num('jeonsePrice', MAN),
-      assumeTenant: !!V.assumeTenant, cash: num('cash', MAN), ownedHomes: owned ?? null,
+      assumeTenant: !!V.assumeTenant, nohomeSince: V.nohomeSince || '', permitAfter: V.permitAfter || 'extend', cash: num('cash', MAN), ownedHomes: owned ?? null,
       willSellExisting: V.buyerType === 'one_dispose', annualIncome: num('annualIncome', MAN), annualSavings: num('annualSavings', MAN) || 0,
       netMonthlyIncome: num('netMonthly', MAN), employment: V.employment || null,
       location: {
@@ -1382,7 +1382,9 @@
       document.dispatchEvent(new CustomEvent('rea:updated', { detail: window.REA_LAST })); persist(); return; }
     const c = compute(i, cond);
     renderVerdict(c); renderKpis(c);
-    window.REA_LAST = { score: c.v.score, label: c.v.label, tone: c.v.tone };
+    window.REA_LAST = { score: c.v.score, label: c.v.label, tone: c.v.tone,
+      inputs: { regionId: i.regionId, propertyType: i.propertyType, price: i.price, areaM2: i.areaM2, age: i.age, retireAge: i.retireAge, appreciation: i.appreciation, purchaseDate: V.purchaseDate || '', moveInBy: V.moveInBy || '', assumeTenant: !!V.assumeTenant },
+      residence: c.assess.residence || null };
     document.dispatchEvent(new CustomEvent('rea:updated', { detail: window.REA_LAST })); renderConditions(c); renderRecon(c); renderLoan(c); renderCost(c); renderCompare(c); renderTiming(c); renderRisk(c); renderMarket(c);
     if (!lawdTouched) $('apiLawd').value = r.lawd || '';
     persist();
