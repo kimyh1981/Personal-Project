@@ -64,13 +64,13 @@
   }
 
   // 내 기준의 찾을 지역(구, 비우면 서울 전체)·주택 종류(비우면 아파트)
-  const KINDS = ['아파트', '빌라', '오피스텔'];
+  const KINDS = ['아파트', '빌라', '단독주택'];
   const kindsOf = (p) => (p.kinds && p.kinds.length ? p.kinds : ['아파트']);
   function scope(p, list = prepare().all) {
     const gus = new Set((p.regions || []).map((g) => 'seoul-' + g)), ks = new Set(kindsOf(p));
     return list.filter((c) => (!gus.size || gus.has(c.regionId)) && ks.has(c.kind));
   }
-  // 시장 데이터에 들어 있는 주택 종류와 수집 상태 (빌라·오피스텔은 활용신청해야 모인다)
+  // 시장 데이터에 들어 있는 주택 종류와 수집 상태 (빌라·단독주택은 활용신청해야 모인다)
   const kindStatus = () => {
     const have = new Set(prepare().all.map((c) => c.kind));
     return Object.fromEntries(KINDS.map((k) => [k, have.has(k) ? 'ok' : (market && market.kinds && market.kinds[k]) || '수집 전']));

@@ -46,7 +46,7 @@
     nohomeSince: '', // 계속 무주택 시작일 (집을 보유 중이면 비운다). 실거주 유예 자격 판단
     permitAfter: 'extend', // 토지거래허가 지정 기간(2026-12-31) 뒤: extend(연장 가정) | lift(해제 가정)
     regions: [], // 찾을 구 (비우면 서울 전체)
-    kinds: ['아파트'], // 찾을 주택 종류: 아파트 · 빌라(연립·다세대) · 오피스텔
+    kinds: ['아파트'], // 찾을 주택 종류: 아파트 · 빌라(연립·다세대) · 단독주택(단독·다가구)
     rateType: 'periodic', // 주담대 금리 유형: 스트레스 DSR 반영비율이 낮아 한도가 큰 주기형을 기본으로
   };
   const thisMonth = () => new Date().toISOString().slice(0, 7);
@@ -623,7 +623,7 @@
     if (e.loc.estimated) out.push('입지는 구 중심 기준 추정');
     const pl = e.plan || {};
     if (e.c.kind === '빌라') out.push('빌라(연립·다세대): 같은 건물 거래가 적어 시세가 불확실하고 팔기 어려움 · 아파트가 아니라 서울 토지거래허가 대상은 아니지만, 정비구역·신속통합기획 후보지는 따로 허가 대상일 수 있어 필지 확인 필요');
-    if (e.c.kind === '오피스텔') out.push('오피스텔: 취득세 4.6% · 주거용이면 주택 수에 들어감 · 은행에 따라 비주택 담보대출로 한도가 달라질 수 있음 · 아파트가 아니라 토지거래허가 대상 아님');
+    if (e.c.kind === '단독주택') out.push('단독·다가구: 실거래에 이름·정확한 지번이 없어 같은 동·비슷한 연면적 거래를 묶은 시세 (개별 매물은 직접 확인) · 다가구는 세입자 여러 명의 보증금을 함께 떠안을 수 있음 · 아파트가 아니라 서울 토지거래허가 대상은 아니지만 정비구역·신속통합기획 후보지는 따로 허가 대상일 수 있음');
     if (pl.taxShort > 0) out.push(`취득세·중개·등기 비용 ${Math.round(e.costs / MAN).toLocaleString()}만원을 낼 내 현금이 ${Math.round(pl.taxShort / MAN).toLocaleString()}만원 부족 (은행 대출로는 낼 수 없어 추가 자금 필요)`);
     if (e.extraCash > 0) out.push(`이 순위는 내 여유자금 ${e.extraCash >= EOK ? `${+(e.extraCash / EOK).toFixed(2)}억원` : `${Math.round(e.extraCash / MAN).toLocaleString()}만원`}을 더해 계산 (갚지 않는 내 돈으로 봄)`);
     if (pl.mode === 'defer') out.push(pl.rule && pl.rule.lifted ? `토지거래허가 해제 가정 (${P.RESIDENCE.landPermitUntil} 뒤, 연장 여부 미정) — 연장되면 이 계획은 불가` : pl.why);
