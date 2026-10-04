@@ -59,7 +59,18 @@
   ];
   const toView = (v, t) => (t === 'won' ? (v ? Math.round(v / MAN) : '') : t === 'pct' ? +(v * 100).toFixed(2) : v ?? '');
   const fromView = (s, t) => (t === 'text' ? s : t === 'won' ? (Number(s) || 0) * MAN : t === 'pct' ? (Number(s) || 0) / 100 : Number(s) || 0);
+  // 가동 가능 자금 요약 (내 기준 맨 위): 순자산 − 매도 비용 − 양도세 − 비상금 + 추가 동원 = 최종 가동 가능 현금
+  function renderFundsSum() {
+    const el = $('fundsSum'); if (!el) return;
+    const f = T.funds(profile);
+    if (!(profile.homes || []).length) { el.innerHTML = ''; return; }
+    const sample = E.closingCosts({ price: 12 * EOK, regionId: 'seoul-마포구', homesAfter: 1, temporaryTwo: false, areaOver85: false, firstTime: false, publicPrice: 12 * EOK * 0.69, vat: true, propertyType: '아파트' }).total;
+    el.innerHTML = `<p><b>최종 가동 가능 현금 ${won(f.cash)}</b></p>
+      <p class="muted">두 채 순자산 ${won(f.equity)} − 매도 중개보수 ${won(f.sellCosts)} − 양도세 ${won(f.cgt)} − 비상금 ${won(f.reserve)}${f.add ? ` + 추가 동원 ${won(f.add)}` : ''}${f.temp ? ` · 나중에 입주하면 그동안 살 집 전세금 ${won(f.temp)}을 빼고 ${won(f.cashDefer)}` : ''}</p>
+      <p class="muted">매수할 때 취득세·중개보수·등기 비용(예: 서울 12억·전용 84㎡ 약 ${won(sample)})을 이 현금에서 먼저 내고, 남는 돈과 은행 대출로 집값을 냅니다.</p>`;
+  }
   function renderForm() {
+    renderFundsSum();
     for (const [k, t] of FIELDS) { const el = $('p_' + k); if (el) el.value = toView(profile[k], t); }
     $('p_saveRest').checked = profile.saveRest !== false;
     const homes = (profile.homes || []).length ? profile.homes : [{ name: '', value: 0, loan: 0, loanRate: 0.03, jeonse: 0 }];
@@ -84,6 +95,7 @@
       if (el.id === 'p_saveRest') profile.saveRest = el.checked;
     }
     save(KEY, profile);
+    renderFundsSum();
     run(false);
   });
   $('myProfile').addEventListener('click', (e) => {
@@ -242,7 +254,7 @@
         <tr><td>두 채 순자산 (시세 − 대출 − 전세)</td><td class="n">${won(f.equity)}</td></tr>
         <tr><td>− 매도 중개보수 · 양도세 예상 · 비상금</td><td class="n">${won(-(f.sellCosts + f.cgt + f.reserve))}</td></tr>
         ${f.add ? `<tr><td>+ 추가 동원 가능 자금</td><td class="n">${won(f.add)}</td></tr>` : ''}
-        <tr><td><b>서울 매수에 쓸 현금</b>${f.temp ? ' (바로 입주)' : ''}</td><td class="n"><b>${won(f.cash)}</b></td></tr>
+        <tr><td><b>최종 가동 가능 현금</b>${f.temp ? ' (바로 입주)' : ''} <span class="muted">· 취득세 등 매수 비용 포함해 여기서 냄</span></td><td class="n"><b>${won(f.cash)}</b></td></tr>
         ${f.temp ? `<tr><td>나중에 입주: 그동안 살 집 전세금 ${won(f.temp)}을 빼고 지금 쓸 현금</td><td class="n">${won(f.cashDefer)}</td></tr>` : ''}
         <tr><td>월 상환 기본 / 최대 / 2순위 / 5순위</td><td class="n">${manw(p.pay)} / ${manw(p.payMax)} / ${manw(p.pay * p.payPlusRatio)} / ${manw(p.payHigh)}</td></tr>
         <tr><td>노후 목표 (${p.targetAge}세, ${years}년 뒤)</td><td class="n">월 ${manw(p.retireNeed)} (현재 가치)</td></tr>
@@ -441,7 +453,8 @@
       </div>
       <div class="tbl-wrap"><table><tbody>
         <tr><td>실거래 중위</td><td class="n">${won(c.price)}${c.jeonse ? ` · 전세 ${won(c.jeonse)}` : ''}</td></tr>
-        <tr><td>취득 비용 (세금·중개·등기)</td><td class="n">${won(e.costs)}</td></tr>
+        <tr><td>취득 비용 (세금·중개·등기) — 내 현금에서 먼저</td><td class="n">${won(e.costs)}</td></tr>
+        ${e.plan.mode === 'now' ? `<tr><td>내 현금 ${won(e.plan.cashAvail)} − 취득 비용 → 집값에 쓰는 내 현금</td><td class="n">${won(Math.min(c.price, Math.max(0, e.plan.cashAvail - e.costs)))}</td></tr>` : ''}
         ${e.extraCash > 0 ? `<tr><td>이 순위에 더한 내 여유자금</td><td class="n">${won(e.extraCash)}</td></tr>` : ''}
         ${e.plan.mode === 'defer' ? `<tr><td>거주 계획: 세입자 두고 ${e.plan.startMonths}개월 뒤 입주</td><td class="n">지금 현금 ${won(e.plan.cashNow)} (전세 ${won(e.plan.J)} 안고 매수${e.plan.loanNow ? ` · 대출 ${won(e.plan.loanNow)}` : ''})</td></tr>
         <tr><td>입주 때 전세금 ${won(e.plan.J)} 돌려주기</td><td class="n">모은 돈 ${won(Math.min(e.plan.fundsAt, e.plan.J))}${e.plan.loanLate ? ` + 전세퇴거자금 대출 ${won(e.plan.loanLate)}` : ''}${e.plus ? ` + 추가 자금 ${won(e.plus)}` : ''}</td></tr>` : ''}
