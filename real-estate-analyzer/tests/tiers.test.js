@@ -310,3 +310,11 @@ test('나중에 입주 + 전세 시세 없음: 빌라는 세입자 없이 내 �
   assert.equal(apt.plan.mode, 'now');
   assert.match(apt.plan.why, /세입자/);
 });
+
+test('순위 월 상환 한도 칸을 비우면 제한 없음 (기본값 되돌리기는 따로)', () => {
+  const p = profile({ tierRules: { t1: { pay: null } } });
+  const r = T.rulesFor(p).t1;
+  assert.equal(r.pay, null);
+  assert.ok(r.custom);
+  assert.equal(T.rulesFor(profile()).t1.pay, profile().payMax);
+});

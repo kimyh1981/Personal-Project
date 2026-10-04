@@ -515,9 +515,10 @@
       const o = ov[id] || {};
       const m = { ...r, id };
       for (const k of ['loan', 'pay', 'minPct', 'recon', 'extra']) if (o[k] !== undefined && o[k] !== null && o[k] !== '') m[k] = o[k];
+      if (Object.prototype.hasOwnProperty.call(o, 'pay') && o.pay === null) m.pay = null; // 월 상환 한도 칸을 비우면 제한 없음
       m.comment = o.comment || '';
       m.extra = Math.max(0, Number(m.extra) || 0); // 이 순위에만 더하는 내 여유자금 (갚지 않는 내 돈)
-      m.custom = ['loan', 'pay', 'minPct', 'recon', 'extra'].some((k) => o[k] !== undefined && o[k] !== null && o[k] !== '');
+      m.custom = ['loan', 'pay', 'minPct', 'recon', 'extra'].some((k) => o[k] !== undefined && o[k] !== null && o[k] !== '') || (Object.prototype.hasOwnProperty.call(o, 'pay') && o.pay === null && d[id].pay != null);
       return [id, m];
     }));
   }
