@@ -363,7 +363,10 @@
     if (pick && rid === c.i.regionId) q = !kind ? `${c.r.name} ${String(name).replace(/\s*\(.*\)\s*$/, '')}` : kind === '빌라' && /\d/.test(parcel) ? parcel : `${c.r.name} ${dong}`;
     else q = ($('parcelAddress').value || '').trim() || c.r.name;
     const label = pick && rid === c.i.regionId ? (kind === '단독주택' ? `${dong} 지도` : name) : q;
-    return `<div class="row verdict-map"><a class="map-btn" href="https://map.kakao.com/?q=${encodeURIComponent(q)}" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.2c-4 0-7.2 3.1-7.2 7 0 5.2 7.2 12.6 7.2 12.6s7.2-7.4 7.2-12.6c0-3.9-3.2-7-7.2-7z" fill="#191919"/><circle cx="12" cy="9.3" r="2.8" fill="#fee500"/></svg>카카오맵에서 보기</a><span class="muted">${esc(label)}</span></div>`;
+    // 좌표를 알면(카카오로 확인했거나 지도 보기에서 찾은 단지) 검색 목록 없이 그 위치 지도로 바로 연다
+    const at = pick && rid === c.i.regionId && window.REA_QMAP ? window.REA_QMAP.known({ id: String(pick.id) }) : null;
+    const href = at ? `https://map.kakao.com/link/map/${encodeURIComponent(String(label).replace(/,/g, ' '))},${at[0]},${at[1]}` : `https://map.kakao.com/?q=${encodeURIComponent(q)}`;
+    return `<div class="row verdict-map"><a class="map-btn" href="${href}" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.2c-4 0-7.2 3.1-7.2 7 0 5.2 7.2 12.6 7.2 12.6s7.2-7.4 7.2-12.6c0-3.9-3.2-7-7.2-7z" fill="#191919"/><circle cx="12" cy="9.3" r="2.8" fill="#fee500"/></svg>카카오맵에서 보기</a><span class="muted">${esc(label)}</span></div>`;
   }
   function renderVerdict(c) {
     const v = c.v;
