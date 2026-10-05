@@ -121,7 +121,8 @@
   let guLayer = null, guData = null, guPicked = new Set();
   const guStyle = (f) => {
     const on = guPicked.has(f.properties.name);
-    return { color: on ? '#3a6df0' : '#5b6170', weight: on ? 1.6 : 1, opacity: on ? 0.9 : 0.6, dashArray: '3 4', fill: on, fillColor: '#3a6df0', fillOpacity: on ? 0.05 : 0, interactive: false };
+    // 실제 지도(길·건물) 위에서도 보이게 진한 색 점선, 고른 구는 파란 점선 + 옅은 바탕
+    return { color: on ? '#1f4fd8' : '#3c4150', weight: on ? 2.5 : 1.6, opacity: on ? 0.95 : 0.8, dashArray: on ? '6 5' : '4 5', fill: on, fillColor: '#1f4fd8', fillOpacity: on ? 0.08 : 0, interactive: false };
   };
   async function drawGu(L, gus) {
     guPicked = new Set(gus || []);
