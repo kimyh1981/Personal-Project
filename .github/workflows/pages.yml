@@ -37,7 +37,7 @@ jobs:
         run: |
           mkdir -p _site
           cd real-estate-analyzer
-          cp -r index.html my.html guide.html manifest.webmanifest sw.js css js icons media ../_site/
+          cp -r index.html my.html guide.html manifest.webmanifest sw.js css js vendor icons media ../_site/
       # 서울 시장 데이터(내 맞춤 추천용)는 주 1회만 새로 모은다: 이번 주 캐시가 있으면 재사용
       - name: Week key
         id: week

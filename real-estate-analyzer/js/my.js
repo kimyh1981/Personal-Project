@@ -234,14 +234,27 @@
     btn.querySelector('.profile-toggle-label').textContent = open ? '닫기' : '열기';
     if (open && scroll) requestAnimationFrame(() => $('myProfileCard').scrollIntoView({ block: 'start' }));
   }
-  $('myProfileToggle').addEventListener('click', () => openProfile(false, $('myProfileBody').hidden));
-  const openFromHash = () => { if (location.hash === '#myProfileCard') openProfile(true); };
+  $('myProfileToggle').addEventListener('click', () => (document.body.dataset.mode === 'edit' ? setEdit(false) : openProfile(false, $('myProfileBody').hidden)));
+
+  // 내 기준 설정 화면: 추천 목록을 숨기고 내 기준만 보여 준다.
+  // (추천이 늦게 그려지면 위쪽이 길어져 열어 둔 내 기준이 화면 밖으로 밀려나던 문제를 피한다) 바꾼 값은 칸마다 바로 저장된다
+  function setEdit(on) {
+    document.body.dataset.mode = on ? 'edit' : '';
+    document.querySelector('.ios-title').textContent = on ? '내 기준 설정' : '내 맞춤 추천';
+    $('myProfileToggle').querySelector('h3').textContent = on ? '내 기준 설정 (이 기기에만 저장)' : '내 기준 (이 기기에만 저장)';
+    openProfile(false, on);
+    if (on) $('myProfileToggle').querySelector('.profile-toggle-label').textContent = '추천 보기 ›';
+    $('editDone').hidden = !on;
+    history.replaceState(null, '', location.pathname + (on ? '?edit=1' : ''));
+    window.scrollTo({ top: 0 });
+  }
+  const openFromHash = () => { if (location.hash === '#myProfileCard' || /[?&]edit=1/.test(location.search)) setEdit(true); };
   window.addEventListener('hashchange', openFromHash);
   document.addEventListener('click', (ev) => {
-    const a = ev.target.closest('[data-open-profile]');
+    const a = ev.target.closest('[data-open-profile], [data-close-edit]');
     if (!a) return;
     ev.preventDefault();
-    openProfile(true);
+    setEdit(!!a.dataset.openProfile || a.hasAttribute('data-open-profile'));
   });
 
   function changeBadge(tierId, cid, rank, last) {
@@ -483,7 +496,8 @@
     const cautions = T.cautions(e, p);
     // 아파트는 단지 이름, 빌라는 지번 주소(이름에 '(891-6)' 같은 지번이 붙어 이름 검색이 안 됨), 단독주택은 동
     const mapQ = c.kind === '빌라' && c.jibun ? `${reg.name} ${c.dong} ${c.jibun}` : c.kind && c.kind !== '아파트' ? `${reg.name} ${c.dong}` : `${reg.name} ${String(c.name).replace(/\s*\(.*\)\s*$/, '')}`;
-    const map = `https://map.kakao.com/?q=${encodeURIComponent(mapQ)}`;
+    // 좌표를 확인한 단지는 검색 목록 없이 그 위치 지도로 바로
+    const map = c.coords ? `https://map.kakao.com/link/map/${encodeURIComponent(String(c.name).replace(/,/g, ' '))},${c.coords[0]},${c.coords[1]}` : `https://map.kakao.com/?q=${encodeURIComponent(mapQ)}`;
     return `<div class="card reco-card">
       <div class="reco-head">
         <span class="rank">${k + 1}</span>

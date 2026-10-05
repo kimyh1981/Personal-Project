@@ -9,12 +9,27 @@
     navigator.serviceWorker.register('sw.js').catch(() => { /* 설치 없이도 동작 */ });
   }
 
+  // 삼성 인터넷(브라우저 탭)은 화면 아래 가운데에 자체 '맨 위로' 화살표를 띄워 하단 메뉴 가운데 버튼을 가린다.
+  // 그때만 메뉴 가운데를 비우고, 양쪽 버튼 폭을 맞춰 빈칸이 정확히 가운데에 오게 한다
+  const samsung = /SamsungBrowser/i.test(navigator.userAgent) && !(window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  function balanceBar() {
+    const gap = bar.querySelector('.appbar-gap');
+    if (!gap) return;
+    gap.hidden = !samsung;
+    const items = [...bar.children].filter((x) => x !== gap && !x.hidden);
+    const left = items.filter((x) => x.compareDocumentPosition(gap) & Node.DOCUMENT_POSITION_FOLLOWING);
+    const right = items.length - left.length;
+    left.forEach((x) => { x.style.flex = samsung && left.length ? String(right / left.length) : ''; });
+  }
+  balanceBar();
+
   // 설치 (안드로이드 크롬·삼성 인터넷)
   let deferred = null;
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferred = e;
     install.hidden = false;
+    balanceBar();
   });
   install.addEventListener('click', async () => {
     if (!deferred) return;

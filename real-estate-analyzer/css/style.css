@@ -941,3 +941,40 @@ button.rule-rank:active { opacity: .75; }
 .ban-banner > b { flex: none; padding: 2px 9px; border-radius: 999px; background: #ff3b30; color: #fff; font-size: 14px; }
 .q-ban { display: block; margin: 4px 0; padding: 6px 9px; border-radius: 9px; background: rgba(255, 59, 48, .12); border: 1px solid #ff3b30; font-size: 13px; line-height: 1.4; color: var(--label); }
 .q-ban > b { display: inline-block; margin-right: 6px; padding: 0 7px; border-radius: 999px; background: #ff3b30; color: #fff; }
+
+/* 내 기준 설정 화면 (my.html?edit=1): 내 기준 카드만 */
+body[data-mode="edit"] .my-main > :not(#myProfileCard) { display: none !important; }
+body[data-mode="edit"] .masthead { display: none; }
+.edit-done { width: 100%; margin-top: 6px; }
+
+/* 하단 메뉴의 '내 기준'(다른 페이지로 가는 링크)과 삼성 인터넷 '맨 위로' 화살표 자리 */
+.appbar .appbar-link {
+  flex: 1; display: grid; justify-items: center; align-content: center; gap: 1px; color: var(--label-3); text-decoration: none; -webkit-tap-highlight-color: transparent;
+  font: 500 11px var(--font); padding: 5px 2px 2px; min-height: 50px; border-radius: 999px;
+}
+.appbar .appbar-link svg { width: 26px; height: 26px; }
+.appbar .appbar-gap { flex: 0 0 52px; }
+.appbar .appbar-gap[hidden] { display: none; }
+
+/* 지도 보기 (내 조건으로 찾기) */
+.peek .peek-map { flex: none; padding: 8px 12px; }
+.q-maprow { gap: 10px; margin-bottom: 8px; }
+.qmap { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; background: var(--bg); }
+.qmap[hidden] { display: none; }
+html.qmap-open, html.qmap-open body { overflow: hidden; }
+.qmap-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px; background: var(--group); border-bottom: 0.5px solid var(--sep); }
+.qmap-head > div { min-width: 0; font-size: 15px; }
+.qmap-head .muted { font-size: 13px; }
+.qmap-map { flex: 1; min-height: 0; background: #e8eaed; }
+.qm-icon { background: none; border: 0; }
+.qm-pin { display: block; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; border: 2px solid #fff; background: var(--tone, #ff9f0a); box-shadow: 0 1px 4px rgb(0 0 0 / 0.35); }
+.qm-pin[data-tone=good] { --tone: #34c759; }
+.qm-pin[data-tone=warning] { --tone: #ff9f0a; }
+.qm-pin[data-tone=critical] { --tone: #ff3b30; }
+.qm-pin b { display: none; }
+.qm-labels .qm-pin { width: auto; height: auto; min-width: 34px; margin: -14px 0 0 -17px; padding: 3px 7px; border-radius: 999px; text-align: center; color: #fff; font: 700 14px/1.2 var(--font); }
+.qm-labels .qm-pin b { display: inline; }
+.qm-pin[data-ban] { outline: 2px dashed #ff3b30; outline-offset: 1px; }
+.qm-pop { display: grid; gap: 4px; font: 14px/1.4 var(--font); color: #1c1c1e; }
+.qm-pop .muted { color: #6b6b70; font-size: 12px; }
+.qm-pop .primary { margin-top: 4px; padding: 8px 12px; border-radius: 999px; }

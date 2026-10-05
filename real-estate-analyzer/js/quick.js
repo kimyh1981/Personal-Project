@@ -35,7 +35,7 @@
     if (m === 'mine') renderPanel();
     else {
       window.REA_FUTURE && window.REA_FUTURE.setPick(null);
-      currentId = null; $('quickNav').hidden = true; $('peekOpen').textContent = '결과 보기';
+      currentId = null; $('quickNav').hidden = true; $('peekOpen').textContent = '결과 보기'; $('peekMap').hidden = true;
       if (window.REA_LAST) document.dispatchEvent(new CustomEvent('rea:updated', { detail: window.REA_LAST })); // 아래 막대를 상세 입력 판정으로
     }
   }
@@ -53,7 +53,11 @@
     return annual * r / 12;
   }
 
-  let profile = null, list = [];
+  let profile = null, list = [], mapItems = [], mapTitle = '';
+  function openMap() {
+    if (!window.REA_QMAP || !mapItems.length) return;
+    window.REA_QMAP.open({ items: mapItems, title: mapTitle, onPick: (id) => { const e = list.find((x) => x.c.id === id); if (e) apply(e); } });
+  }
   let navIds = [], navSets = { inIds: [], outIds: [] }, currentId = null; // 목록에 보이는 단지 순서와 지금 판정 중인 단지 (판정 화면에서 이전·다음·목록으로)
   function settings() {
     const q = load(QUICK_KEY, {});
@@ -92,7 +96,7 @@
     panel.innerHTML = `
       <div class="quick-head">
         <p><b>${esc(profile.name ? profile.name + ' 님 조건' : '내 조건')}</b> · 바로 입주 현금 ${won(f.cash)}${f.add ? ` (추가 동원 ${won(f.add)} 포함)` : ''}${f.temp ? ` · 나중에 입주 현금 ${won(f.cashDefer)}` : ''} · 월 상환 ${manw(profile.pay)}${profile.payMax > profile.pay ? `(최대 ${manw(profile.payMax)})` : ''}${profile.annualIncome ? ` · 연소득 ${won(profile.annualIncome)}` : ''}</p>
-        <a href="my.html#myProfileCard">내 기준 고치기 ›</a>
+        <a href="my.html?edit=1">내 기준 고치기 ›</a>
       </div>
       <div class="quick-form">
         <label class="f">매수 시기<input id="q_buy" type="month" data-nosave value="${esc(s.buy)}"></label>
@@ -136,7 +140,7 @@
             : `<p><span class="chip warning">${esc(ks.join('·'))} 유예 불가</span> ${esc(rr.why)}</p><p class="muted">${gap}개월 뒤 입주는 허가 후 ${P.RESIDENCE.registerMonths}개월 안이라 가능하고, 바로 입주로 계산했습니다.</p>`)
         : `<p class="muted"><b>${esc(ks.join('·'))}</b>: ${esc(rr.why)}</p>`).join('')}
     </div>`;
-    if (!gus.length || !kinds.length) { $('q_list').innerHTML = `<p>${!gus.length ? '구를' : '주택 종류를'} 하나 이상 고르세요.</p>`; return; }
+    if (!gus.length || !kinds.length) { mapItems = []; $('peekMap').hidden = true; $('q_list').innerHTML = `<p>${!gus.length ? '구를' : '주택 종류를'} 하나 이상 고르세요.</p>`; return; }
     const pr = M.prepare(), f = T.funds(p);
     const gset = new Set(gus.map((g) => 'seoul-' + g)), dset = new Set(dongs), kset = new Set(kinds);
     const guOfId = (r) => r.replace(/^seoul-/, '');
@@ -154,6 +158,8 @@
     const verdictOf = new Map();
     if (window.REA_APP) for (const e of [...inTier.slice(0, shown), ...outside.slice(0, shown)]) verdictOf.set(e.c.id, window.REA_APP.scoreFor(valuesFor(e, p, buy, move, locationSync(e.c))));
     if (currentId && !list.some((e) => e.c.id === currentId)) currentId = null;
+    // 지도 보기: 목록에 보이는 단지 (순위에 드는 곳, 없으면 조건 밖)
+    const onMap = (inTier.length ? inTier : outside).slice(0, shown);
     // 토지거래허가: 입주를 미룰 수 없는 집(바로 입주로 계산)인데 희망 입주가 허가 후 4개월을 넘기면 그 시기로는 매수 불가
     const banned = (e) => gap > P.RESIDENCE.registerMonths && e.plan.forced;
     const nBan = list.filter(banned).length;
@@ -172,7 +178,10 @@
         <span class="q-go">판정 보기 ›</span>
       </button></li>`;
     };
-    $('q_list').innerHTML = `${nBan ? `<p class="ban-banner" role="alert"><b>불가</b><span>토지거래허가: 이 목록의 아파트 ${nBan.toLocaleString()}곳은 입주를 미룰 수 없어 매수 ${esc(buy)} → 입주 ${esc(move)}(${gap}개월 뒤) 계획으로는 살 수 없습니다. 허가 후 ${P.RESIDENCE.registerMonths}개월 안에 입주하면 가능하고, 점수·계산은 바로 입주 기준입니다. 입주 유예는 ${esc(P.RESIDENCE.defer.nohomeSince)}부터 계속 무주택인 사람이 세입자 있는 집을 살 때만 됩니다.</span></p>` : ''}<p class="muted">${esc(gus.join('·'))}${dongs.length ? ` (${esc(dongs.map((d) => d.split('|')[1]).join('·'))})` : ''} · ${esc(kinds.join('·'))} 단지·평형 ${subset.length.toLocaleString()}곳 중 내 조건으로 순위에 드는 곳 <b>${inTier.length.toLocaleString()}곳</b> (이번 주 서울 실거래 ${esc(M.market.asOf.slice(0, 10))} 기준). 왼쪽 숫자는 그 단지로 계산한 판정 점수입니다${[...verdictOf.values()].some(Boolean) && inTier.some((e) => locationSync(e.c).estimated) ? ' (역·학교 거리를 아직 확인하지 않은 단지는 10분으로 추정)' : ''}.</p>
+    mapItems = onMap.map((e) => { const v = verdictOf.get(e.c.id), t = tierOf.get(e.c.id); return { e, score: v ? v.score : null, tone: v ? v.tone : 'warning', label: v ? v.label.replace(/ — .*/, '') : '', price: won(e.c.price), tier: t ? t.t.rank : '', ban: banned(e) }; });
+    mapTitle = `${gus.join('·')} · ${inTier.length ? '순위에 드는 곳' : '조건 밖'} ${mapItems.length}곳`;
+    $('peekMap').hidden = !mapItems.length;
+    $('q_list').innerHTML = `${mapItems.length ? `<div class="row q-maprow"><button type="button" class="ghost" data-qmap>지도 보기 · ${mapItems.length}곳</button><span class="muted">확대하면 점수가 보이고, 누르면 판정으로</span></div>` : ''}${nBan ? `<p class="ban-banner" role="alert"><b>불가</b><span>토지거래허가: 이 목록의 아파트 ${nBan.toLocaleString()}곳은 입주를 미룰 수 없어 매수 ${esc(buy)} → 입주 ${esc(move)}(${gap}개월 뒤) 계획으로는 살 수 없습니다. 허가 후 ${P.RESIDENCE.registerMonths}개월 안에 입주하면 가능하고, 점수·계산은 바로 입주 기준입니다. 입주 유예는 ${esc(P.RESIDENCE.defer.nohomeSince)}부터 계속 무주택인 사람이 세입자 있는 집을 살 때만 됩니다.</span></p>` : ''}<p class="muted">${esc(gus.join('·'))}${dongs.length ? ` (${esc(dongs.map((d) => d.split('|')[1]).join('·'))})` : ''} · ${esc(kinds.join('·'))} 단지·평형 ${subset.length.toLocaleString()}곳 중 내 조건으로 순위에 드는 곳 <b>${inTier.length.toLocaleString()}곳</b> (이번 주 서울 실거래 ${esc(M.market.asOf.slice(0, 10))} 기준). 왼쪽 숫자는 그 단지로 계산한 판정 점수입니다${[...verdictOf.values()].some(Boolean) && inTier.some((e) => locationSync(e.c).estimated) ? ' (역·학교 거리를 아직 확인하지 않은 단지는 10분으로 추정)' : ''}.</p>
       ${inTier.length ? `<ol class="q-list">${inTier.slice(0, shown).map(row).join('')}</ol>${inTier.length > shown ? `<button type="button" class="ghost q-more" data-more>더 보기 (${Math.min(30, inTier.length - shown)}곳 더 · 남은 ${(inTier.length - shown).toLocaleString()}곳)</button>` : ''}` : `<p>이 지역·종류에는 이번 주 내 조건(순위 기준)에 맞는 곳이 없습니다.${kinds.some((k) => M.kindStatus()[k] !== 'ok') ? ` (${esc(kinds.filter((k) => M.kindStatus()[k] !== 'ok').join('·'))}는 아직 실거래 데이터가 없습니다)` : ''} 다른 동·구를 고르거나 매수 시기를 바꿔 보세요.</p>`}
       ${outside.length ? `<details class="q-out"${outside.slice(0, shown).some((e) => e.c.id === currentId) ? ' open' : ''}><summary>조건 밖 ${outside.length.toLocaleString()}곳 (가격 낮은 순)</summary><ol class="q-list">${outside.slice(0, shown).map(row).join('')}</ol></details>` : ''}`;
     // 이전·다음은 누른 단지가 있는 목록(순위에 드는 곳 / 조건 밖) 안에서만
@@ -215,6 +224,7 @@
       else $('q_list').scrollIntoView({ block: 'start' });
     });
   }
+  $('peekMap').addEventListener('click', openMap);
   $('quickNav').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-qnav]'); if (!b || b.disabled) return;
     if (b.dataset.qnav === 'list') { backToList(); return; }
@@ -239,6 +249,7 @@
   // 칩: 구를 바꾸면 동 목록도 다시
   panel.addEventListener('click', (e) => {
     if (e.target.closest('[data-more]')) { shown += 30; compute(true); return; }
+    if (e.target.closest('[data-qmap]')) { openMap(); return; }
     const g = CH.toggle(e);
     if (!g) return;
     if (g === 'q_gus') renderDongs(pickedDongs());
