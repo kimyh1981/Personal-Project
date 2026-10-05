@@ -53,10 +53,10 @@
     return annual * r / 12;
   }
 
-  let profile = null, list = [], mapItems = [], mapTitle = '';
+  let profile = null, list = [], mapItems = [], mapTitle = '', mapGus = [];
   function openMap() {
     if (!window.REA_QMAP || !mapItems.length) return;
-    window.REA_QMAP.open({ items: mapItems, title: mapTitle, onPick: (id) => { const e = list.find((x) => x.c.id === id); if (e) apply(e); } });
+    window.REA_QMAP.open({ items: mapItems, title: mapTitle, gus: mapGus, onPick: (id) => { const e = list.find((x) => x.c.id === id); if (e) apply(e); } });
   }
   let navIds = [], navSets = { inIds: [], outIds: [] }, currentId = null; // 목록에 보이는 단지 순서와 지금 판정 중인 단지 (판정 화면에서 이전·다음·목록으로)
   function settings() {
@@ -179,6 +179,7 @@
       </button></li>`;
     };
     mapItems = onMap.map((e) => { const v = verdictOf.get(e.c.id), t = tierOf.get(e.c.id); return { e, score: v ? v.score : null, tone: v ? v.tone : 'warning', label: v ? v.label.replace(/ — .*/, '') : '', price: won(e.c.price), tier: t ? t.t.rank : '', ban: banned(e) }; });
+    mapGus = gus.slice();
     mapTitle = `${gus.join('·')} · ${inTier.length ? '순위에 드는 곳' : '조건 밖'} ${mapItems.length}곳`;
     $('peekMap').hidden = !mapItems.length;
     $('q_list').innerHTML = `${mapItems.length ? `<div class="row q-maprow"><button type="button" class="ghost" data-qmap>지도 보기 · ${mapItems.length}곳</button><span class="muted">확대하면 점수가 보이고, 누르면 판정으로</span></div>` : ''}${nBan ? `<p class="ban-banner" role="alert"><b>불가</b><span>토지거래허가: 이 목록의 아파트 ${nBan.toLocaleString()}곳은 입주를 미룰 수 없어 매수 ${esc(buy)} → 입주 ${esc(move)}(${gap}개월 뒤) 계획으로는 살 수 없습니다. 허가 후 ${P.RESIDENCE.registerMonths}개월 안에 입주하면 가능하고, 점수·계산은 바로 입주 기준입니다. 입주 유예는 ${esc(P.RESIDENCE.defer.nohomeSince)}부터 계속 무주택인 사람이 세입자 있는 집을 살 때만 됩니다.</span></p>` : ''}<p class="muted">${esc(gus.join('·'))}${dongs.length ? ` (${esc(dongs.map((d) => d.split('|')[1]).join('·'))})` : ''} · ${esc(kinds.join('·'))} 단지·평형 ${subset.length.toLocaleString()}곳 중 내 조건으로 순위에 드는 곳 <b>${inTier.length.toLocaleString()}곳</b> (이번 주 서울 실거래 ${esc(M.market.asOf.slice(0, 10))} 기준). 왼쪽 숫자는 그 단지로 계산한 판정 점수입니다${[...verdictOf.values()].some(Boolean) && inTier.some((e) => locationSync(e.c).estimated) ? ' (역·학교 거리를 아직 확인하지 않은 단지는 10분으로 추정)' : ''}.</p>
