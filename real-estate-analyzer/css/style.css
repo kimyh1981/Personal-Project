@@ -978,3 +978,7 @@ html.qmap-open, html.qmap-open body { overflow: hidden; }
 .qm-pop { display: grid; gap: 4px; font: 14px/1.4 var(--font); color: #1c1c1e; }
 .qm-pop .muted { color: #6b6b70; font-size: 12px; }
 .qm-pop .primary { margin-top: 4px; padding: 8px 12px; border-radius: 999px; }
+/* 지도의 구 이름 (구 경계 가운데) */
+.leaflet-tooltip.qm-gu { background: none; border: 0; box-shadow: none; padding: 0; color: #5b6170; font: 600 12px var(--font); text-shadow: 0 0 3px #fff, 0 0 3px #fff; }
+.leaflet-tooltip.qm-gu::before { display: none; }
+.leaflet-tooltip.qm-gu.qm-gu-on { color: #2b55c9; font-size: 13px; }
