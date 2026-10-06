@@ -42,9 +42,29 @@ function parseRestDays(xml) {
   return out;
 }
 
-async function fetchRestDays(ymd, key, fetcher = fetch) {
+// 공공데이터포털은 Node 내장 fetch로 연결이 끊기는 경우가 있어 부동산 판단기(tools/market.js)처럼 https 모듈로 읽는다
+function httpsGet(url) {
+  return new Promise((resolve, reject) => {
+    const req = require('https').get(url, { timeout: 15000, headers: { 'user-agent': 'Mozilla/5.0 (news-briefing)' } }, (res) => {
+      let d = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => (d += c));
+      res.on('end', () => resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, text: async () => d }));
+    });
+    req.on('error', reject);
+    req.on('timeout', () => req.destroy(new Error('응답 시간 초과')));
+  });
+}
+
+async function fetchRestDays(ymd, key, fetcher = httpsGet) {
   const url = `${API}?serviceKey=${encodeURIComponent(key)}&solYear=${ymd.slice(0, 4)}&solMonth=${ymd.slice(5, 7)}&numOfRows=50`;
-  const res = await fetcher(url, { signal: AbortSignal.timeout(15e3) });
+  let res;
+  for (let k = 0; ; k++) {
+    try { res = await fetcher(url); break; } catch (err) {
+      if (k >= 2) throw new Error(err.cause?.code || err.code || err.message);
+      await new Promise((r) => setTimeout(r, 1000 * (k + 1)));
+    }
+  }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const xml = await res.text();
   if (!/<resultCode>00<\/resultCode>/.test(xml)) throw new Error((xml.match(/<(?:resultMsg|returnAuthMsg)>([^<]*)</) || [])[1] || '응답 오류');
