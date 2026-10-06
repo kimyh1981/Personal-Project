@@ -52,7 +52,7 @@ async function readSource(src, log) {
   return [];
 }
 
-// 자동 재생(아이폰 단축어·Tasker)이 읽는 briefing.txt: 주말·공휴일에는 비워 두어 아무것도 읽지 않게 한다
+// 자동 재생(아이폰 단축어·MacroDroid·Tasker)이 읽는 briefing.txt: 주말·공휴일에는 비워 두어 아무것도 읽지 않게 한다
 function speechText(b) {
   return b.autoPlay.play ? b.script : '';
 }
@@ -80,7 +80,7 @@ if (require.main === module) {
     b.log.forEach((l) => console.log('  ' + l));
     console.log(`자동 재생: ${b.autoPlay.play ? '함' : '안 함'} (${b.autoPlay.ymd} ${b.autoPlay.reason}, ${b.autoPlay.source})`);
     console.log(`원고 ${b.script.length}자 (약 ${Math.ceil(b.script.length / 330)}분)`);
-    if (b.script.length > 3900) console.log('  경고: 안드로이드 음성 엔진(Tasker Say)은 약 4,000자까지만 읽습니다. feeds.json의 limit을 줄이세요.');
+    if (b.script.length > 3900) console.log('  경고: 안드로이드 음성 엔진(MacroDroid·Tasker)은 약 4,000자까지만 읽습니다. feeds.json의 limit을 줄이세요.');
     process.exit(0); // 남은 연결이 있어도 배포를 막지 않는다
   })();
 }

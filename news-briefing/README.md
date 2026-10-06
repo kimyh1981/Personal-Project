@@ -29,17 +29,21 @@
 2. 만약: 형식이 지정된 날짜가 6과 7 사이 (6:00~7:59)
 3. 만약 안에: URL `https://kimyh1981.github.io/Personal-Project/news/briefing.txt` → URL의 콘텐츠 가져오기 → 텍스트 말하기 (한국어)
 
-**갤럭시 (터치 없이 자동, Tasker)** — 플레이스토어에서 Tasker를 설치하고, 근처 기기(블루투스) 권한을 허용하고, 배터리 최적화에서 Tasker를 '제한 없음'으로 둡니다.
+**갤럭시 (터치 없이 자동, MacroDroid 무료판)** — 플레이스토어에서 MacroDroid를 설치하고, 근처 기기(블루투스) 권한을 허용하고, 배터리 최적화에서 MacroDroid를 '제한 없음'으로 둡니다. 무료판 한도(매크로 5개) 중 2개를 씁니다. 무료판 광고는 앱 화면에만 나오고, 매크로가 도는 동안에는 나오지 않습니다.
 
-1. 프로필 + → State → Net → **BT Connected** → Name: 차 블루투스. 같은 프로필에 **Time** 06:00~08:00, **Day** 월~금을 더합니다.
-2. 작업 '아침 뉴스':
-   1. Task → **Wait** 5초 (차 오디오 연결 대기)
-   2. Net → **HTTP Request**: GET `https://kimyh1981.github.io/Personal-Project/news/briefing.txt`, Timeout 30
-   3. Alert → **Say**: Text `%http_data`, Engine:Voice 구글 한국어, Stream **Media**, Respect Audio Focus 체크, If `%http_data` Is Set (공휴일의 빈 원고는 건너뜀)
-3. 프로필 길게 누르기 → Add Exit Task → Alert → **Shut Up** (블루투스가 끊기면 읽기 중지)
+매크로 1 '아침 뉴스':
+1. 트리거: 연결 → 블루투스 이벤트 → 기기 연결됨 → 차 블루투스
+2. 동작: 다음 동작 전 대기 5초 (차 오디오 연결 대기)
+3. 동작: HTTP 요청 GET `https://kimyh1981.github.io/Personal-Project/news/briefing.txt`, 응답을 로컬 문자열 변수 `briefing`에 저장
+4. 동작: 텍스트 음성 변환(Speak Text) — 텍스트 `{lv=briefing}`, 언어 한국어, 출력 스트림 미디어(음악)
+5. 제약 조건: 요일 월~금, 시간대 06:00~08:00
+
+매크로 2 '내리면 멈춤': 트리거 블루투스 이벤트 → 기기 연결 끊김 → 차 블루투스, 동작 매크로 동작 취소 → '아침 뉴스'.
+
+**Tasker를 쓴다면** — 프로필 BT Connected(차) + Time 06:00~08:00 + Day 월~금 → 작업: Wait 5초 → HTTP Request GET `briefing.txt` 주소 → Say `%http_data` (Engine:Voice 구글 한국어, Stream Media, If `%http_data` Is Set). 종료 작업(Exit Task)은 Shut Up.
 
 안드로이드 음성 엔진은 한 번에 약 4,000자까지 읽습니다. 원고는 기본 설정에서 1,300자 안팎이고, 수집 로그가 3,900자를 넘으면 경고합니다.
-Tasker 없이 쓰려면 모드 및 루틴으로 블루투스 연결 시 '아침 뉴스' 앱(크롬 → 앱 설치)을 열고 **듣기**를 한 번 누릅니다.
+앱 없이 쓰려면 모드 및 루틴으로 블루투스 연결 시 '아침 뉴스' 앱(크롬 → 앱 설치)을 열고 **듣기**를 한 번 누릅니다.
 
 ## 개발
 
