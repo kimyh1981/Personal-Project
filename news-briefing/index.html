@@ -44,13 +44,24 @@
     <summary>차에 타면 자동으로 듣기 설정</summary>
     <p><b>아이폰 (완전 자동)</b> · 단축어 앱 → 자동화 → 새로운 자동화 → <b>블루투스</b> → 차 블루투스 선택 → <b>연결될 때</b>, <b>즉시 실행</b>.</p>
     <ol>
-      <li>동작 <b>URL</b>: <code id="txtUrl">briefing.txt</code></li>
+      <li>동작 <b>URL</b>: <code class="txtUrl">briefing.txt</code></li>
       <li>동작 <b>URL의 콘텐츠 가져오기</b></li>
       <li>동작 <b>텍스트 말하기</b> (언어 한국어, 속도는 취향대로)</li>
     </ol>
     <p>아침에만 듣고 싶으면 맨 앞에 <b>현재 날짜</b> → <b>날짜 형식 지정</b>(사용자 지정 <code>H</code>) → <b>만약</b> "결과가 11보다 작음"을 넣고, 위 세 동작을 그 안에 둡니다.</p>
-    <p><b>갤럭시</b> · 크롬으로 이 페이지를 열고 메뉴 → <b>홈 화면에 추가 / 앱 설치</b>로 '아침 뉴스' 앱을 설치합니다. 설정 → 모드 및 루틴 → 루틴 추가 → 조건 <b>블루투스 기기</b>(차 선택, 연결됨) → 동작 <b>앱 열기</b>에서 '아침 뉴스'를 고릅니다.</p>
-    <p>안드로이드 크롬은 화면을 한 번 눌러야 소리를 낼 수 있어서, 앱이 열리면 <b>듣기</b>를 한 번 눌러 주세요. 터치 없이 들으려면 Tasker의 <b>HTTP Get</b> + <b>Say</b> 동작으로 위 주소를 읽게 하면 됩니다.</p>
+    <p><b>갤럭시 (완전 자동, Tasker)</b> · 플레이스토어에서 Tasker를 설치하고 근처 기기(블루투스) 권한을 허용, 배터리 최적화에서 Tasker를 <b>제한 없음</b>으로 둡니다.</p>
+    <ol>
+      <li><b>프로필</b> + → State → Net → <b>BT Connected</b> → Name에서 차 블루투스를 고릅니다. 아침에만 들으려면 프로필에 Time 05:00~11:00을 더합니다.</li>
+      <li>새 작업 '아침 뉴스'에 동작 세 개를 넣습니다.
+        <ol>
+          <li>Task → <b>Wait</b> 5초 (차 오디오가 연결될 시간)</li>
+          <li>Net → <b>HTTP Request</b>: Method GET, URL <code class="txtUrl">briefing.txt</code>, Timeout 30</li>
+          <li>Alert → <b>Say</b>: Text <code>%http_data</code>, Engine:Voice 구글 한국어, Stream <b>Media</b>, Respect Audio Focus 체크</li>
+        </ol>
+      </li>
+      <li>프로필을 길게 눌러 <b>Add Exit Task</b> → Alert → <b>Shut Up</b>: 차에서 내리면(블루투스가 끊기면) 읽기를 멈춥니다.</li>
+    </ol>
+    <p>Tasker 없이 쓰려면 모드 및 루틴으로 블루투스 연결 시 '아침 뉴스' 앱을 열고 <b>듣기</b>를 한 번 누르면 됩니다 (크롬은 한 번 눌러야 소리를 냅니다).</p>
   </details>
 </main>
 

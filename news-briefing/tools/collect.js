@@ -72,6 +72,7 @@ if (require.main === module) {
     console.log(`뉴스 브리핑 ${b.dateLabel}: ` + b.sections.map((s) => `${s.title} ${s.items.length}건`).join(' · '));
     b.log.forEach((l) => console.log('  ' + l));
     console.log(`원고 ${b.script.length}자 (약 ${Math.ceil(b.script.length / 330)}분)`);
+    if (b.script.length > 3900) console.log('  경고: 안드로이드 음성 엔진(Tasker Say)은 약 4,000자까지만 읽습니다. feeds.json의 limit을 줄이세요.');
     process.exit(0); // 남은 연결이 있어도 배포를 막지 않는다
   })();
 }

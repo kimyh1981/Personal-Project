@@ -105,7 +105,7 @@
     showRate();
     if (playing) play();
   };
-  $('txtUrl').textContent = new URL('briefing.txt', location.href).href;
+  document.querySelectorAll('.txtUrl').forEach((el) => { el.textContent = new URL('briefing.txt', location.href).href; });
 
   if (!synth) $('play').disabled = true;
   else { pickVoice(); synth.onvoiceschanged = pickVoice; }
