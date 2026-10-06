@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<title>아침 뉴스 브리핑</title>
+<style>
+  :root { --bg: #f8fafc; --card: #fff; --ink: #0f172a; --sub: #475569; --line: #e2e8f0; --accent: #2563eb; --accent-ink: #fff; --now: #dbeafe; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0b1120; --card: #111827; --ink: #e5e7eb; --sub: #94a3b8; --line: #1f2937; --accent: #3b82f6; --now: #1e3a8a; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: 16px 16px 120px; }
+  h1 { font-size: 1.4rem; margin: 8px 0 2px; }
+  .meta { color: var(--sub); font-size: .9rem; margin: 0 0 16px; }
+  .player { position: fixed; left: 0; right: 0; bottom: 0; background: var(--card); border-top: 1px solid var(--line); padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); display: flex; gap: 10px; align-items: center; justify-content: center; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 12px; padding: 12px 16px; min-height: 48px; cursor: pointer; }
+  button.play { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-size: 1.15rem; font-weight: 700; flex: 1; max-width: 320px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin: 0 0 12px; }
+  h2 { font-size: 1.05rem; margin: 2px 0 8px; }
+  ol { margin: 0; padding-left: 1.3em; }
+  li { margin: 6px 0; border-radius: 6px; }
+  li.now { background: var(--now); }
+  li a { color: inherit; text-decoration: none; }
+  li small { color: var(--sub); margin-left: 4px; }
+  .empty { color: var(--sub); margin: 0; }
+  details { margin-top: 20px; color: var(--sub); }
+  details summary { cursor: pointer; color: var(--ink); font-weight: 600; }
+  details ol { padding-left: 1.4em; }
+  code { background: var(--line); border-radius: 4px; padding: 0 4px; word-break: break-all; }
+</style>
+</head>
+<body>
+<main>
+  <h1>아침 뉴스 브리핑</h1>
+  <p class="meta" id="meta">불러오는 중…</p>
+  <div id="list"></div>
+
+  <details id="setup">
+    <summary>차에 타면 자동으로 듣기 설정</summary>
+    <p>기본값: <b>월~금 아침 6~8시</b>에 차 블루투스가 연결되면 자동으로 읽습니다. 주말과 공휴일(대체공휴일·선거일 포함)에는 <code>briefing.txt</code>가 비어 있어 아무것도 읽지 않고, 이 화면에서는 언제든 들을 수 있습니다.</p>
+    <p><b>아이폰 (완전 자동)</b> · 단축어 앱 → 자동화 → 새로운 자동화 → <b>블루투스</b> → 차 블루투스 선택 → <b>연결될 때</b>, <b>즉시 실행</b>.</p>
+    <ol>
+      <li>동작 <b>현재 날짜</b> → <b>날짜 형식 지정</b>: 사용자 지정 <code>H</code></li>
+      <li>동작 <b>만약</b>: 형식이 지정된 날짜가 <b>6과 7 사이</b> (6시 0분~7시 59분)</li>
+      <li>만약 안에 동작 <b>URL</b>: <code class="txtUrl">briefing.txt</code> → <b>URL의 콘텐츠 가져오기</b> → <b>텍스트 말하기</b> (언어 한국어)</li>
+    </ol>
+    <p><b>갤럭시 (완전 자동, MacroDroid 무료)</b> · 플레이스토어에서 MacroDroid를 설치하고 근처 기기(블루투스) 권한을 허용, 배터리 최적화에서 MacroDroid를 <b>제한 없음</b>으로 둡니다. 무료판의 매크로 5개 중 2개를 씁니다.</p>
+    <p>매크로 1 '아침 뉴스'</p>
+    <ol>
+      <li>트리거: 연결 → <b>블루투스 이벤트</b> → 기기 연결됨 → 차 블루투스</li>
+      <li>동작: <b>다음 동작 전 대기</b> 5초 (차 오디오가 연결될 시간)</li>
+      <li>동작: <b>HTTP 요청</b> GET <code class="txtUrl">briefing.txt</code>, 응답을 문자열 변수 <code>briefing</code>에 저장</li>
+      <li>동작: <b>텍스트 음성 변환(Speak Text)</b>: 텍스트 <code>{lv=briefing}</code>, 언어 한국어, 출력 스트림 <b>미디어(음악)</b></li>
+      <li>제약 조건: <b>요일</b> 월~금, <b>시간대</b> 06:00~08:00</li>
+    </ol>
+    <p>매크로 2 '내리면 멈춤': 트리거 블루투스 이벤트 → 기기 연결 끊김 → 차 블루투스, 동작 <b>매크로 동작 취소</b> → '아침 뉴스'.</p>
+    <p>공휴일·주말에는 원고가 비어 있어 읽을 내용이 없습니다. MacroDroid 무료판은 앱 화면에만 광고가 나오고, 차에서 읽어 주는 동안에는 광고가 없습니다.</p>
+    <p><b>Tasker를 쓴다면</b> · 프로필 BT Connected(차) + Time 06:00~08:00 + Day 월~금 → 작업: Wait 5초 → HTTP Request GET <code class="txtUrl">briefing.txt</code> → Say <code>%http_data</code>(Stream Media, If <code>%http_data</code> Is Set). 종료 작업은 Shut Up.</p>
+    <p>앱 없이 쓰려면 모드 및 루틴으로 블루투스 연결 시 '아침 뉴스' 앱을 열고 <b>듣기</b>를 한 번 누르면 됩니다 (크롬은 한 번 눌러야 소리를 냅니다).</p>
+  </details>
+</main>
+
+<div class="player">
+  <button id="back" aria-label="이전 섹션">⏮</button>
+  <button id="play" class="play">▶ 듣기</button>
+  <button id="next" aria-label="다음 섹션">⏭</button>
+  <button id="rate" aria-label="읽기 속도">1.0×</button>
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
