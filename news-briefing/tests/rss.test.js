@@ -63,7 +63,7 @@ test('비슷한 제목은 섹션을 넘어서도 한 번만, 출처별 take와 �
   const dup = [{ title: '정부 비료가격 안정대책 발표', link: 'x', publishedAt: null }, { title: '새 소식 하나', link: 'y', publishedAt: null }, { title: '새 소식 둘', link: 'z', publishedAt: null }];
   const b = rss.pick({ limit: 10 }, [{ source: { name: '나', take: 1 }, items: dup }], NOW, seen);
   assert.deepEqual(b.map((i) => i.title), ['새 소식 하나']);
-  const c = rss.pick({ limit: 1 }, [{ source: { name: '다', take: 5 }, items: [{ title: '하나' }, { title: '둘 둘' }] }], NOW, []);
+  const c = rss.pick({ limit: 1 }, [{ source: { name: '다', take: 5 }, items: [{ title: '첫째 소식입니다' }, { title: '둘째 소식입니다' }] }], NOW, []);
   assert.equal(c.length, 1);
 });
 
@@ -81,4 +81,22 @@ test('원고: 날짜 인사, 섹션 순서 안내, 신문사 이름, 빈 섹션 
     '마지막으로 국제 정세와 경제입니다.', '라 기사.', '',
     '이상으로 오늘 아침 브리핑을 마칩니다. 오늘도 안전 운전하세요.', '',
   ].join('\n'));
+});
+
+test('한자 약칭은 우리말로 읽는다', () => {
+  assert.equal(rss.spoken('日, 10년물 국채 금리 인상'), '일본, 10년물 국채 금리 인상');
+  assert.equal(rss.spoken('美·中 정상회담…與野 반응'), '미국 중국 정상회담, 여야 반응');
+});
+
+test('일본어판 기사와 한글이 거의 없는 제목은 건너뛴다', () => {
+  assert.ok(rss.skip('韓国の科学技術院4校、随時募集志願者が初の3万人超'));
+  assert.ok(rss.skip('Samsung unveils new chip'));
+  assert.ok(!rss.skip('삼성, 새 반도체 공개'));
+});
+
+test('제목이 달라도 같은 사건이면 한 번만 읽고, 다른 사건은 그대로 둔다 (실제 수집 결과)', () => {
+  const same = ['7일 개막 J-AGRI TOKYO 국내 농기자재 14개사 참여', '치바 농산업박람회에 한국기업 14개사 참가, K-농기자재 수출시장 개척', 'K농기자재, 日시장 공략, 치바 농산업박람회에 14개사 참가'];
+  for (let i = 0; i < same.length; i++) for (let j = i + 1; j < same.length; j++) assert.ok(rss.similar(same[i], same[j]), `${same[i]} / ${same[j]}`);
+  const diff = ['가축사육농가 5년새 급감, 양계농가는 반토막', '한국육계협회, 2026 전국 육계인 상생 전진대회 성료', '뇌 심혈관 질환 산재 사망 5년여간 2350명, 한달 36명꼴', '美국방 전문가, 대만군 상주 추진, 대만 미국 무기판매 확신', '대만 中, 부커상 수상 작가 양솽쯔 독일 행사 취소 요구'];
+  for (let i = 0; i < diff.length; i++) for (let j = i + 1; j < diff.length; j++) assert.ok(!rss.similar(diff[i], diff[j]), `${diff[i]} / ${diff[j]}`);
 });

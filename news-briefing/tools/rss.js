@@ -55,8 +55,11 @@ function parseFeed(xml) {
 // 사진·영상·부고·인사 같은 기사는 귀로 들어도 소용이 없다
 const SKIP = /\[(포토|사진|영상|그래픽|카드뉴스|부고|인사|게시판|운세|오늘의 운세|만평|TV|동영상)\]|^(부고|인사|게시판|오늘의 운세)\b|포토뉴스|\[포토\]/;
 
+// 일본어판·영문판 기사(한글이 거의 없는 제목)도 뺀다
 function skip(title) {
-  return SKIP.test(title);
+  if (/[\u3040-\u30ff]/.test(title)) return true;
+  const hangul = (title.match(/[가-힣]/g) || []).length;
+  return hangul < 4 || SKIP.test(title);
 }
 
 // 구글 뉴스 제목 끝의 " - 언론사"를 떼어 낸다
@@ -65,9 +68,13 @@ function splitGoogleSource(title, source) {
   return title.replace(/ - [^-]{1,20}$/, '').trim();
 }
 
+// 제목에 흔한 한자 약칭: 음성이 '날 일'처럼 읽지 않게 우리말로 바꾼다
+const HANJA = [['與野', '여야'], ['日', '일본'], ['美', '미국'], ['中', '중국'], ['北', '북한'], ['韓', '한국'], ['英', '영국'], ['獨', '독일'], ['佛', '프랑스'], ['露', '러시아'], ['印', '인도'], ['濠', '호주'], ['與', '여당'], ['野', '야당'], ['靑', '청와대'], ['檢', '검찰'], ['軍', '군'], ['銀', '은행'], ['株', '주식'], ['前', '전'], ['現', '현'], ['新', '신'], ['故', '고']];
+
 // 소리 내어 읽기 좋게 다듬는다: 말머리, (종합), 따옴표, 말줄임표, 기호
 function spoken(title) {
   let s = title;
+  for (const [h, k] of HANJA) s = s.split(h).join(k);
   s = s.replace(/\[[^\]]{1,12}\]|【[^】]{1,12}】|<[^>]{1,12}>|〈[^〉]{1,12}〉/g, ' ');
   s = s.replace(/\((종합|종합\d*보|\d+보|속보|단독|상보|영상|사진|포토|인터뷰|르포|일문일답)[^)]{0,6}\)/g, ' ');
   s = s.replace(/^\s*(속보|단독)\s*[:|]?\s*/, ' ');
@@ -99,7 +106,20 @@ function similar(a, b) {
   const B = bigrams(nb);
   let both = 0;
   for (const x of A) if (B.has(x)) both++;
-  return both / (A.size + B.size - both) >= 0.6;
+  if (both / (A.size + B.size - both) >= 0.6) return true;
+  // 제목이 달라도 같은 사건: 숫자가 든 낱말("14개사")과 다른 긴 낱말("농기자재")을 함께 공유하거나, 긴 낱말을 셋 이상 공유
+  const ta = words(a);
+  const tb = words(b);
+  const shared = ta.filter((x) => tb.some((y) => x === y || (x.length >= 3 && y.includes(x)) || (y.length >= 3 && x.includes(y))));
+  const digit = shared.filter((x) => /\d/.test(x) && x.length >= 2);
+  const long = shared.filter((x) => !/\d/.test(x) && x.length >= 3);
+  return (digit.length >= 1 && long.length >= 1) || long.length >= 3;
+}
+
+const PARTICLE = /(에서|으로|에게|까지|부터|이다|에|의|을|를|은|는|이|가|와|과|로|도)$/;
+
+function words(title) {
+  return spoken(title).toLowerCase().split(/[^0-9a-z가-힣]+/).map((w) => (w.length > 2 ? w.replace(PARTICLE, '') : w)).filter((w) => w.length >= 2);
 }
 
 function fresh(item, now, hours = 36) {
@@ -111,15 +131,16 @@ function fresh(item, now, hours = 36) {
 // 출처별로 읽어 온 기사를 섹션 목록으로 고른다. seen은 섹션끼리 겹치는 기사를 거르는 데 쓴다
 function pick(section, fetched, now, seen = []) {
   const items = [];
+  const hours = section.hours || 36;
   for (const { source, items: list } of fetched) {
     let taken = 0;
     for (const it of list) {
       if (taken >= (source.take || 3) || items.length >= section.limit) break;
       const title = it.viaGoogle ? splitGoogleSource(it.title, it.source) : it.title;
-      if (skip(title) || !fresh(it, now) || !spoken(title)) continue;
+      if (skip(title) || !fresh(it, now, hours) || !spoken(title)) continue;
       if (seen.some((t) => similar(t, title))) continue;
       seen.push(title);
-      items.push({ title, spoken: spoken(title), source: source.name === '구글 뉴스' ? it.source || source.name : source.name, link: it.link, publishedAt: it.publishedAt });
+      items.push({ title, spoken: spoken(title), source: source.name.startsWith('구글 뉴스') ? it.source || source.name : source.name, link: it.link, publishedAt: it.publishedAt });
       taken++;
     }
   }
@@ -162,4 +183,4 @@ function buildScript(sections, now) {
   return lines.join('\n') + '\n';
 }
 
-module.exports = { decodeEntities, text, parseFeed, skip, splitGoogleSource, spoken, similar, fresh, pick, koreanDate, buildScript };
+module.exports = { decodeEntities, text, parseFeed, skip, splitGoogleSource, spoken, similar, words, fresh, pick, koreanDate, buildScript };

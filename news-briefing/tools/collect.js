@@ -10,8 +10,8 @@ const rss = require('./rss.js');
 
 const UA = 'Mozilla/5.0 (compatible; news-briefing/1.0; +https://github.com/kimyh1981/Personal-Project)';
 
-function googleUrl(q) {
-  return `https://news.google.com/rss/search?q=${encodeURIComponent(q + ' when:1d')}&hl=ko&gl=KR&ceid=KR:ko`;
+function googleUrl(q, when = '1d') {
+  return `https://news.google.com/rss/search?q=${encodeURIComponent(`${q} when:${when}`)}&hl=ko&gl=KR&ceid=KR:ko`;
 }
 
 // 국내 언론 RSS 일부는 EUC-KR이다: XML 선언이나 Content-Type의 charset을 보고 푼다
@@ -35,10 +35,10 @@ async function get(url) {
 async function readSource(src, log) {
   const tries = [];
   if (src.url) tries.push(['RSS', src.url]);
-  if (src.google) tries.push(['구글', googleUrl(src.google)]);
+  if (src.google) tries.push(['구글', googleUrl(src.google, src.when)]);
   for (const [kind, url] of tries) {
     try {
-      const items = rss.parseFeed(await get(url)).map((it) => ({ ...it, viaGoogle: kind === '구글' }));
+      const items = rss.parseFeed(await get(url)).map((it) => ({ ...it, viaGoogle: url.startsWith('https://news.google.com/') }));
       if (items.length) {
         log.push(`${src.name}: ${kind} ${items.length}건`);
         return items;
