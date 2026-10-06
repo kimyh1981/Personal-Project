@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<title>아침 뉴스 브리핑</title>
+<style>
+  :root { --bg: #f8fafc; --card: #fff; --ink: #0f172a; --sub: #475569; --line: #e2e8f0; --accent: #2563eb; --accent-ink: #fff; --now: #dbeafe; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0b1120; --card: #111827; --ink: #e5e7eb; --sub: #94a3b8; --line: #1f2937; --accent: #3b82f6; --now: #1e3a8a; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: 16px 16px 120px; }
+  h1 { font-size: 1.4rem; margin: 8px 0 2px; }
+  .meta { color: var(--sub); font-size: .9rem; margin: 0 0 16px; }
+  .player { position: fixed; left: 0; right: 0; bottom: 0; background: var(--card); border-top: 1px solid var(--line); padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); display: flex; gap: 10px; align-items: center; justify-content: center; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 12px; padding: 12px 16px; min-height: 48px; cursor: pointer; }
+  button.play { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-size: 1.15rem; font-weight: 700; flex: 1; max-width: 320px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin: 0 0 12px; }
+  h2 { font-size: 1.05rem; margin: 2px 0 8px; }
+  ol { margin: 0; padding-left: 1.3em; }
+  li { margin: 6px 0; border-radius: 6px; }
+  li.now { background: var(--now); }
+  li a { color: inherit; text-decoration: none; }
+  li small { color: var(--sub); margin-left: 4px; }
+  .empty { color: var(--sub); margin: 0; }
+  details { margin-top: 20px; color: var(--sub); }
+  details summary { cursor: pointer; color: var(--ink); font-weight: 600; }
+  details ol { padding-left: 1.4em; }
+  code { background: var(--line); border-radius: 4px; padding: 0 4px; word-break: break-all; }
+</style>
+</head>
+<body>
+<main>
+  <h1>아침 뉴스 브리핑</h1>
+  <p class="meta" id="meta">불러오는 중…</p>
+  <div id="list"></div>
+
+  <details id="setup">
+    <summary>차에 타면 자동으로 듣기 설정</summary>
+    <p><b>아이폰 (완전 자동)</b> · 단축어 앱 → 자동화 → 새로운 자동화 → <b>블루투스</b> → 차 블루투스 선택 → <b>연결될 때</b>, <b>즉시 실행</b>.</p>
+    <ol>
+      <li>동작 <b>URL</b>: <code id="txtUrl">briefing.txt</code></li>
+      <li>동작 <b>URL의 콘텐츠 가져오기</b></li>
+      <li>동작 <b>텍스트 말하기</b> (언어 한국어, 속도는 취향대로)</li>
+    </ol>
+    <p>아침에만 듣고 싶으면 맨 앞에 <b>현재 날짜</b> → <b>날짜 형식 지정</b>(사용자 지정 <code>H</code>) → <b>만약</b> "결과가 11보다 작음"을 넣고, 위 세 동작을 그 안에 둡니다.</p>
+    <p><b>갤럭시</b> · 크롬으로 이 페이지를 열고 메뉴 → <b>홈 화면에 추가 / 앱 설치</b>로 '아침 뉴스' 앱을 설치합니다. 설정 → 모드 및 루틴 → 루틴 추가 → 조건 <b>블루투스 기기</b>(차 선택, 연결됨) → 동작 <b>앱 열기</b>에서 '아침 뉴스'를 고릅니다.</p>
+    <p>안드로이드 크롬은 화면을 한 번 눌러야 소리를 낼 수 있어서, 앱이 열리면 <b>듣기</b>를 한 번 눌러 주세요. 터치 없이 들으려면 Tasker의 <b>HTTP Get</b> + <b>Say</b> 동작으로 위 주소를 읽게 하면 됩니다.</p>
+  </details>
+</main>
+
+<div class="player">
+  <button id="back" aria-label="이전 섹션">⏮</button>
+  <button id="play" class="play">▶ 듣기</button>
+  <button id="next" aria-label="다음 섹션">⏭</button>
+  <button id="rate" aria-label="읽기 속도">1.0×</button>
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>

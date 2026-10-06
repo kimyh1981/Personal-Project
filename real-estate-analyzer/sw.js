@@ -35,6 +35,7 @@ self.addEventListener('fetch', (e) => {
   }
   if (url.origin !== location.origin) return;
   if (url.pathname.includes('/media/')) return; // 안내 영상은 크고 구간 요청이라 캐시하지 않는다
+  if (url.pathname.includes('/news/')) return; // 같은 사이트의 아침 뉴스 브리핑은 별도 앱: 매일 바뀌므로 건드리지 않는다
   e.respondWith(fetch(req).then((res) => {
     if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
     return res;
