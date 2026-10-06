@@ -51,6 +51,8 @@ jobs:
         working-directory: news-briefing
         timeout-minutes: 3
         continue-on-error: true
+        env:
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
         run: node tools/collect.js ../_site/news
       # 서울 시장 데이터(내 맞춤 추천용)는 주 1회만 새로 모은다: 이번 주 캐시가 있으면 재사용
       - name: Week key

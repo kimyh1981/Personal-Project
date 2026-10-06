@@ -26,7 +26,8 @@
 
   function render(b) {
     const age = (Date.now() - Date.parse(b.generatedAt)) / 3600e3;
-    $('meta').textContent = `${b.dateLabel} · ${kstTime(b.generatedAt)} 수집` + (age > 20 ? ' · 어제 소식일 수 있어요' : '');
+    $('meta').textContent = `${b.dateLabel} · ${kstTime(b.generatedAt)} 수집` + (age > 20 ? ' · 어제 소식일 수 있어요' : '') +
+      (b.autoPlay && !b.autoPlay.play ? ` · 오늘은 ${b.autoPlay.reason}이라 차에서 자동 재생은 쉬어요` : '');
     $('list').innerHTML = b.sections.map((s, si) => `<section><h2>${esc(s.title)}</h2>` + (s.items.length
       ? `<ol>${s.items.map((it, ii) => `<li id="i${si}-${ii}"><a href="${esc(it.link)}" target="_blank" rel="noopener">${esc(it.title)}</a><small>${esc(it.source)}</small></li>`).join('')}</ol>`
       : '<p class="empty">새 소식 없음</p>') + '</section>').join('');

@@ -23,6 +23,8 @@ jobs:
       - name: Live collect
         working-directory: news-briefing
         timeout-minutes: 3
+        env:
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
         run: |
           node tools/collect.js dist
           echo '--- 원고 ---'

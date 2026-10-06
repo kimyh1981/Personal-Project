@@ -7,6 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const rss = require('./rss.js');
+const holidays = require('./holidays.js');
 
 const UA = 'Mozilla/5.0 (compatible; news-briefing/1.0; +https://github.com/kimyh1981/Personal-Project)';
 
@@ -51,14 +52,20 @@ async function readSource(src, log) {
   return [];
 }
 
-async function collect(config, now = Date.now()) {
+// 자동 재생(아이폰 단축어·Tasker)이 읽는 briefing.txt: 주말·공휴일에는 비워 두어 아무것도 읽지 않게 한다
+function speechText(b) {
+  return b.autoPlay.play ? b.script : '';
+}
+
+async function collect(config, now = Date.now(), key = '') {
   const log = [];
+  const autoPlay = await holidays.playDay(now, key);
   const fetched = await Promise.all(config.sections.map((sec) => Promise.all(sec.sources.map(async (source) => ({ source, items: await readSource(source, log) })))));
   const seen = [];
   const sections = config.sections.map((sec, i) => ({ id: sec.id, title: sec.title, perSourceLabel: !!sec.perSourceLabel, items: rss.pick(sec, fetched[i], now, seen) }));
   const total = sections.reduce((n, s) => n + s.items.length, 0);
   const script = total ? rss.buildScript(sections, now) : `좋은 아침입니다. ${rss.koreanDate(now)}입니다. 오늘은 뉴스를 가져오지 못했습니다. 안전 운전하세요.\n`;
-  return { generatedAt: new Date(now).toISOString(), dateLabel: rss.koreanDate(now), sections, script, log };
+  return { generatedAt: new Date(now).toISOString(), dateLabel: rss.koreanDate(now), autoPlay, sections, script, log };
 }
 
 if (require.main === module) {
@@ -66,15 +73,16 @@ if (require.main === module) {
     const out = path.resolve(process.argv[2] || 'dist');
     fs.mkdirSync(out, { recursive: true });
     const config = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'feeds.json'), 'utf8'));
-    const b = await collect(config);
+    const b = await collect(config, Date.now(), process.env.DATA_GO_KR_KEY || '');
     fs.writeFileSync(path.join(out, 'briefing.json'), JSON.stringify(b, null, 1));
-    fs.writeFileSync(path.join(out, 'briefing.txt'), b.script);
+    fs.writeFileSync(path.join(out, 'briefing.txt'), speechText(b));
     console.log(`뉴스 브리핑 ${b.dateLabel}: ` + b.sections.map((s) => `${s.title} ${s.items.length}건`).join(' · '));
     b.log.forEach((l) => console.log('  ' + l));
+    console.log(`자동 재생: ${b.autoPlay.play ? '함' : '안 함'} (${b.autoPlay.ymd} ${b.autoPlay.reason}, ${b.autoPlay.source})`);
     console.log(`원고 ${b.script.length}자 (약 ${Math.ceil(b.script.length / 330)}분)`);
     if (b.script.length > 3900) console.log('  경고: 안드로이드 음성 엔진(Tasker Say)은 약 4,000자까지만 읽습니다. feeds.json의 limit을 줄이세요.');
     process.exit(0); // 남은 연결이 있어도 배포를 막지 않는다
   })();
 }
 
-module.exports = { collect, decode, googleUrl };
+module.exports = { collect, decode, googleUrl, speechText };
