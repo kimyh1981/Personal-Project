@@ -69,7 +69,7 @@ function splitGoogleSource(title, source) {
 }
 
 // 제목에 흔한 한자 약칭: 음성이 '날 일'처럼 읽지 않게 우리말로 바꾼다
-const HANJA = [['與野', '여야'], ['日', '일본'], ['美', '미국'], ['中', '중국'], ['北', '북한'], ['韓', '한국'], ['英', '영국'], ['獨', '독일'], ['佛', '프랑스'], ['露', '러시아'], ['印', '인도'], ['濠', '호주'], ['與', '여당'], ['野', '야당'], ['靑', '청와대'], ['檢', '검찰'], ['軍', '군'], ['銀', '은행'], ['株', '주식'], ['前', '전'], ['現', '현'], ['新', '신'], ['故', '고']];
+const HANJA = [['與野', '여야'], ['日', '일본'], ['美', '미국'], ['中', '중국'], ['北', '북한'], ['韓', '한국'], ['英', '영국'], ['獨', '독일'], ['佛', '프랑스'], ['露', '러시아'], ['印', '인도'], ['濠', '호주'], ['與', '여당'], ['野', '야당'], ['靑', '청와대'], ['檢', '검찰'], ['軍', '군'], ['銀', '은행'], ['株', '주식'], ['百', '백화점'], ['女', '여성'], ['男', '남성'], ['前', '전'], ['現', '현'], ['新', '신'], ['故', '고']];
 
 // 소리 내어 읽기 좋게 다듬는다: 말머리, (종합), 따옴표, 말줄임표, 기호
 function spoken(title) {
@@ -80,8 +80,8 @@ function spoken(title) {
   s = s.replace(/^\s*(속보|단독)\s*[:|]?\s*/, ' ');
   s = s.replace(/[‘’“”"'`]/g, '');
   s = s.replace(/…|\.{2,}/g, ', ');
-  s = s.replace(/↑/g, ' 상승').replace(/↓/g, ' 하락').replace(/→/g, ' 에서 ');
-  s = s.replace(/·/g, ' ').replace(/[|/]/g, ', ').replace(/~/g, '에서 ');
+  s = s.replace(/↑/g, ' 상승').replace(/↓/g, ' 하락').replace(/[→⇒]/g, ', ');
+  s = s.replace(/·/g, ' ').replace(/[|/]/g, ', ').replace(/(\d)\s*~\s*(?=\d)/g, '$1에서 ').replace(/~/g, ', ');
   s = s.replace(/\s*,(?:\s*,)*\s*(?!\d)/g, ', ').replace(/\s+/g, ' ').replace(/^[\s,]+|[\s,]+$/g, '');
   return s;
 }
@@ -113,7 +113,7 @@ function similar(a, b) {
   const shared = ta.filter((x) => tb.some((y) => x === y || (x.length >= 3 && y.includes(x)) || (y.length >= 3 && x.includes(y))));
   const digit = shared.filter((x) => /\d/.test(x) && x.length >= 2);
   const long = shared.filter((x) => !/\d/.test(x) && x.length >= 3);
-  return (digit.length >= 1 && long.length >= 1) || long.length >= 3;
+  return (digit.length >= 1 && long.length >= 1) || long.length >= 2;
 }
 
 const PARTICLE = /(에서|으로|에게|까지|부터|이다|에|의|을|를|은|는|이|가|와|과|로|도)$/;
@@ -132,12 +132,13 @@ function fresh(item, now, hours = 36) {
 function pick(section, fetched, now, seen = []) {
   const items = [];
   const hours = section.hours || 36;
+  const must = section.must ? new RegExp(section.must) : null; // 검색 결과에 섞여 든 엉뚱한 기사를 거른다
   for (const { source, items: list } of fetched) {
     let taken = 0;
     for (const it of list) {
       if (taken >= (source.take || 3) || items.length >= section.limit) break;
       const title = it.viaGoogle ? splitGoogleSource(it.title, it.source) : it.title;
-      if (skip(title) || !fresh(it, now, hours) || !spoken(title)) continue;
+      if (skip(title) || !fresh(it, now, hours) || !spoken(title) || (must && !must.test(title))) continue;
       if (seen.some((t) => similar(t, title))) continue;
       seen.push(title);
       items.push({ title, spoken: spoken(title), source: source.name.startsWith('구글 뉴스') ? it.source || source.name : source.name, link: it.link, publishedAt: it.publishedAt });
